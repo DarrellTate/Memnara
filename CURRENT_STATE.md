@@ -1,25 +1,22 @@
 # Memnara current state
 
 ```text
-LAST APPROVED MILESTONE: 5
-CURRENT WORK: 6
-MILESTONE 5 STATUS: COMPLETE / APPROVED
-MILESTONE 6: IMPLEMENTED / AWAITING CHATGPT REVIEW
-MILESTONE 6 AUTHORIZED: YES
+LAST APPROVED MILESTONE: 6
+CURRENT WORK: none
+MILESTONE 6: COMPLETE / APPROVED
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
 ```
 
 ```text
-M0–M5 COMPLETE / APPROVED
-M6 IMPLEMENTED / AWAITING CHATGPT REVIEW
+M0–M6 COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–5 are complete and approved. Milestone 6 generic battle handling is implemented and awaiting ChatGPT review. It is not approved complete. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
-Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy. Enhanced structured-state adapters are local/private.
+Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
 ```text
 CURRENT IMPLEMENTATION
@@ -106,3 +103,9 @@ M6 comparison is in [docs/milestones/m6-battle-handling.md](docs/milestones/m6-b
 6. `qwen3-vl:8b` places structured JSON in `message.thinking` while `content` is empty (`think: false`).
 7. Fusion compares only explicit battle flags (`battle_visible` vs `is_in_battle`), including when `scene_type=UNKNOWN`; no menu/mode/map conflict heuristics.
 8. M5 live play is inefficient (walls, accidental menus). Cadence is vision+reasoning per step, typically several seconds.
+
+Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6:
+
+9. Centralize the duplicated `"battle"` conflict label between fusion and the battle view when a later cleanup is authorized.
+10. Record `confirm_execution` exceptions on the step instead of aborting the loop.
+11. Review battle-view fields that are derived and not read by the loop.

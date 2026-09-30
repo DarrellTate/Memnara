@@ -1,6 +1,8 @@
 # Milestone 6 — Generic battle handling
 
-**Status:** IMPLEMENTED / AWAITING CHATGPT REVIEW
+**Status:** COMPLETE / APPROVED
+
+ChatGPT approved M6 on 2026-09-30. The deferred live battle proof was accepted. Hands-on battle validation will happen separately. M7 is not authorized.
 
 M6 teaches the existing bounded loop to notice a battle and reason for that interaction. It does not add title-specific strategy, new action names, persistent memory, or a desktop UI.
 
@@ -93,7 +95,13 @@ M6 adds CLI mode and transition lines, so user observability of battle state is 
 - `scene_type` can still be `UNKNOWN` while other flags are usable. That remains vision debt.
 - Repeated ineffective actions use the existing stuck detector. There is no battle-specific tactic memory.
 - A stale-mode step does not count as a consecutive failure. It can still feed the stuck detector because the fingerprint did not change, same as an ownership denial.
-- Live combat was not demonstrated in this implementation pass.
+- Live combat was not demonstrated in this implementation pass. That deferral is accepted.
+
+Non-blocking debt recorded at approval. These are not open M6 work:
+
+- Centralize the duplicated `"battle"` conflict label between fusion and the battle view when a later cleanup is authorized.
+- Record `confirm_execution` exceptions on the step instead of aborting the loop.
+- Review battle-view fields that are derived and not read by the loop.
 
 ## Performance
 

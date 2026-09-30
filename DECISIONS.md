@@ -3,12 +3,11 @@
 ADR-001 through ADR-008 are **ACCEPTED**.
 
 ```text
-M0–M5 COMPLETE / APPROVED
-M6 IMPLEMENTED / AWAITING CHATGPT REVIEW
+M0–M6 COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestone 6 is implemented and awaiting ChatGPT review. ADR-008 is accepted architecture; it does not authorize memory, RAG, UI, or M7 implementation.
+Milestone 6 is **COMPLETE / APPROVED**. ADR-008 is accepted architecture; it does not authorize memory, RAG, UI, or M7 implementation.
 
 | ID | Title | Status |
 |---|---|---|
