@@ -4,6 +4,7 @@
 LAST APPROVED MILESTONE: 6
 CURRENT WORK: none
 MILESTONE 6: COMPLETE / APPROVED
+POST-M6 VALIDATION PATCH: COMPLETE / APPROVED
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -11,10 +12,11 @@ ADR-001–ADR-008: ACCEPTED
 
 ```text
 M0–M6 COMPLETE / APPROVED
+POST-M6 VALIDATION PATCH COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The post-M6 hands-on validation patch is complete and approved. It is not a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 

@@ -31,6 +31,7 @@ M22  Cross-runtime profile continuity proof
 
 ```text
 M0–M6 COMPLETE / APPROVED
+POST-M6 VALIDATION PATCH COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
@@ -39,6 +40,7 @@ M7 AUTHORIZED NO
 - **M4** remains perception fusion. **COMPLETE / APPROVED.**
 - **M5** remains first autonomous-control proof on an emulator-backed local reference title. Milestone title keeps historical **stuck v1**; it **includes stuck v0** (coord/screen loop) so navigation is testable before M14. **COMPLETE / APPROVED.**
 - **M6** generic battle handling on the bounded loop. **COMPLETE / APPROVED.** No new action names. VISION + INPUT remains sufficient. Live battle proof was deferred and accepted.
+- **Post-M6 validation patch** adds a developer-visible controlled emulator window and corrects visual-only progress semantics. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
 - **M7** profile-aware persistent + session memory foundation. Requirements include: `ai_profile_id` ownership (never model ownership); session/working memory distinct from long-term store; SQLite schema; memory types/scopes; timestamps; model provenance (`model_id_at_creation` is metadata only); lineage (`source_memory_ids` / `source_game_ids`); CRUD primitives; bulk filtering/reset primitives. See [ADR-008](docs/adr/ADR-008-ai-memory-knowledge-architecture.md) (**ACCEPTED**). **Not authorized.**
 - **M8** memory compression / retrieval / consolidation. Requirements include: short-term → long-term consolidation; SQLite FTS5 retrieval; bounded top-K retrieval; importance / recency / scope filters; derived-memory lineage/reconciliation. **Not authorized.**
 - **M8A** Game Knowledge Packs + local RAG. Game-scoped document packs (TXT / Markdown / PDF initially), activate/deactivate, document enable/disable, category/provenance metadata, bounded local retrieval, knowledge policies (BLIND / LORE / MANUAL / GUIDED / FULL). Packs belong to game/session configuration, not to an AI profile. Do not merge pack chunks into personal memory. **Not authorized.**

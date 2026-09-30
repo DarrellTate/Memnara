@@ -105,7 +105,7 @@ Non-blocking debt recorded at approval. These are not open M6 work:
 
 ## Post-M6 hands-on validation
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. The post-M6 hands-on validation patch is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 `--show-window` passes PyBoy's in-process `"SDL2"` window to the one `PyBoyAdapter` shared by the observer and the executor. The default remains `"null"`. The flag does not start a second emulator and does not add a vision call.
 
