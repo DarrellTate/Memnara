@@ -6,10 +6,11 @@ ADR-001 through ADR-008 are **ACCEPTED**.
 M0–M6 COMPLETE / APPROVED
 POST-M6 PATCH #1 COMPLETE / APPROVED
 POST-M6 PATCH #2 COMPLETE / APPROVED
+POST-M6 PATCH #3 IMPLEMENTED / AWAITING CHATGPT REVIEW
 M7 AUTHORIZED NO
 ```
 
-Milestone 6 is **COMPLETE / APPROVED**. The first post-M6 validation patch is **COMPLETE / APPROVED**. The second post-M6 movement patch is **COMPLETE / APPROVED**. Neither is a new milestone. ADR-008 is accepted architecture; it does not authorize memory, RAG, UI, or M7 implementation.
+Milestone 6 is **COMPLETE / APPROVED**. The first post-M6 validation patch is **COMPLETE / APPROVED**. The second post-M6 movement patch is **COMPLETE / APPROVED**. The third post-M6 transition patch is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. None is a new milestone. ADR-008 is accepted architecture; it does not authorize memory, RAG, UI, or M7 implementation.
 
 | ID | Title | Status |
 |---|---|---|

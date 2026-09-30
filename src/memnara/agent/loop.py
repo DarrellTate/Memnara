@@ -16,10 +16,17 @@ from memnara.agent.exceptions import (
 from memnara.agent.execute import ActionExecutor, ExecutionResult
 from memnara.agent.history import RecentStep, StepHistory
 from memnara.agent.movement import MovementOutcome, classify_movement
-from memnara.agent.observe import PerceptionObserver, meaningful_progress
+from memnara.agent.observe import ObservedState, PerceptionObserver, meaningful_progress
 from memnara.agent.ownership import ControlGate
 from memnara.agent.reasoning import ReasoningProvider
 from memnara.agent.stuck import StuckDetector, StuckState
+from memnara.agent.transition import (
+    DEFAULT_TRANSITION_CHUNK_FRAMES,
+    DEFAULT_TRANSITION_GRACE_FRAMES,
+    TRANSITION_GUIDANCE,
+    SceneStability,
+    frame_stability,
+)
 from memnara.agent.validator import ActionValidator
 from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUnavailableError
 
@@ -31,6 +38,15 @@ class LoopResult:
     steps: tuple[RecentStep, ...]
     goal: str
     dry_run: bool
+
+
+@dataclass(frozen=True)
+class _Acquisition:
+    state: ObservedState
+    passive_frames: int
+    saw_transition: bool
+    grace_remaining: int
+    suppressed: bool
 
 
 class AgentLoop:
@@ -48,11 +64,17 @@ class AgentLoop:
         max_consecutive_failures: int = 5,
         dry_run: bool = False,
         goal: str = "Explore and make progress through the game.",
+        transition_grace_frames: int = DEFAULT_TRANSITION_GRACE_FRAMES,
+        transition_chunk_frames: int = DEFAULT_TRANSITION_CHUNK_FRAMES,
     ) -> None:
         if max_steps < 1:
             raise ValueError("max_steps must be >= 1")
         if max_consecutive_failures < 1:
             raise ValueError("max_consecutive_failures must be >= 1")
+        if transition_grace_frames < 1:
+            raise ValueError("transition_grace_frames must be >= 1")
+        if transition_chunk_frames < 1:
+            raise ValueError("transition_chunk_frames must be >= 1")
         self.observer = observer
         self.reasoner = reasoner
         self.validator = validator
@@ -64,6 +86,9 @@ class AgentLoop:
         self.max_consecutive_failures = max_consecutive_failures
         self.dry_run = dry_run
         self.goal = goal
+        self.transition_grace_frames = transition_grace_frames
+        self.transition_chunk_frames = transition_chunk_frames
+        self._grace_used = 0
 
     def run(self) -> LoopResult:
         consecutive_failures = 0
@@ -71,9 +96,10 @@ class AgentLoop:
         for index in range(1, self.max_steps + 1):
             started = time.perf_counter()
             try:
-                before = self.observer.observe()
+                before_acq = self._acquire()
             except Exception as exc:
                 raise PerceptionFailedError(f"observe failed: {exc}") from exc
+            before = before_acq.state
             proposal: ActionProposal | None = None
             validation_ok = False
             executed = False
@@ -82,112 +108,129 @@ class AgentLoop:
             reasoning_ms: float | None = None
             execution_ms: float | None = None
             after = before
+            after_acq: _Acquisition | None = None
             interaction_mode = derive_battle_view(before.context).mode.value
-            reason_started = time.perf_counter()
-            try:
-                proposal = self.reasoner.propose(
-                    context=before.context,
-                    goal=self.goal,
-                    stuck_state=self.stuck.state.value,
-                    discouraged=self.stuck.discouraged,
-                    history_lines=self.history.action_lines(),
-                    validator=self.validator,
-                )
-                thinking_flag = bool(proposal.metadata.get("json_in_message.thinking"))
-                proposal = self.validator.parse_and_validate(
-                    {
-                        "action": proposal.action,
-                        "parameters": proposal.parameters,
-                        "reason": proposal.reason,
-                        "confidence": proposal.confidence,
-                    }
-                )
-                if thinking_flag:
-                    proposal = ActionProposal(
-                        action=proposal.action,
-                        parameters=proposal.parameters,
-                        reason=proposal.reason,
-                        confidence=proposal.confidence,
-                        metadata={"json_in_message.thinking": True},
+
+            if not before_acq.suppressed:
+                history_lines = self.history.action_lines()
+                if before.scene_stability == SceneStability.TRANSIENT.value:
+                    history_lines = (TRANSITION_GUIDANCE,) + history_lines
+                reason_started = time.perf_counter()
+                try:
+                    proposal = self.reasoner.propose(
+                        context=before.context,
+                        goal=self.goal,
+                        stuck_state=self.stuck.state.value,
+                        discouraged=self.stuck.discouraged,
+                        history_lines=history_lines,
+                        validator=self.validator,
                     )
-                validation_ok = True
-            except (
-                MalformedProposalError,
-                InvalidActionError,
-                ReasoningError,
-                ModelUnavailableError,
-                OllamaUnavailableError,
-            ) as exc:
-                error = f"{type(exc).__name__}: {exc}"
-                consecutive_failures += 1
-            reasoning_ms = (time.perf_counter() - reason_started) * 1000
-
-            if validation_ok and proposal is not None:
-                if not self.ownership.allows_gameplay():
-                    error = f"OwnershipDeniedError: owner={self.ownership.owner.value}"
-                else:
-                    confirmed = self._confirm_execution(before)
-                    reasoned_mode = derive_battle_view(before.context).mode
-                    confirmed_mode = derive_battle_view(confirmed.context).mode
-                    if reasoned_mode != confirmed_mode:
-                        error = (
-                            f"StaleModeError: reasoned={reasoned_mode.value} "
-                            f"confirmed={confirmed_mode.value}"
+                    thinking_flag = bool(proposal.metadata.get("json_in_message.thinking"))
+                    proposal = self.validator.parse_and_validate(
+                        {
+                            "action": proposal.action,
+                            "parameters": proposal.parameters,
+                            "reason": proposal.reason,
+                            "confidence": proposal.confidence,
+                        }
+                    )
+                    if thinking_flag:
+                        proposal = ActionProposal(
+                            action=proposal.action,
+                            parameters=proposal.parameters,
+                            reason=proposal.reason,
+                            confidence=proposal.confidence,
+                            metadata={"json_in_message.thinking": True},
                         )
-                    elif self.dry_run:
-                        # execution_ok True means the no-execution policy completed, not that input occurred.
-                        execution_ok = True
-                        consecutive_failures = 0
-                    else:
-                        exec_started = time.perf_counter()
-                        try:
-                            result = self.executor.execute(proposal)
-                        except Exception as exc:
-                            result = ExecutionResult(
-                                ok=False,
-                                executed=False,
-                                released=True,
-                                error=f"{type(exc).__name__}: {exc}",
-                            )
-                        finally:
-                            self.executor.release_all()
-                        execution_ms = (time.perf_counter() - exec_started) * 1000
-                        executed = result.executed
-                        execution_ok = result.ok
-                        if result.error:
-                            error = result.error
-                        if not result.ok:
-                            consecutive_failures += 1
-                        else:
-                            consecutive_failures = 0
-                            try:
-                                after = self.observer.observe()
-                            except Exception as exc:
-                                error = f"PerceptionFailedError: {exc}"
-                                consecutive_failures += 1
-                                after = before
+                    validation_ok = True
+                except (
+                    MalformedProposalError,
+                    InvalidActionError,
+                    ReasoningError,
+                    ModelUnavailableError,
+                    OllamaUnavailableError,
+                ) as exc:
+                    error = f"{type(exc).__name__}: {exc}"
+                    consecutive_failures += 1
+                reasoning_ms = (time.perf_counter() - reason_started) * 1000
 
-            # Uses the two observations this step already collected. No extra vision call.
-            # A failed re-observe keeps the same object, so there is no after-frame to judge.
-            if executed and after is before and proposal is not None and proposal.action.startswith("MOVE_"):
-                movement = MovementOutcome.UNCERTAIN
-            else:
-                movement = classify_movement(
-                    action=proposal.action if proposal else None,
-                    executed=executed,
-                    navigation_before=before.navigation_token,
-                    navigation_after=after.navigation_token,
-                    scene_before=before.scene,
-                    scene_after=after.scene,
-                )
+                if validation_ok and proposal is not None:
+                    if not self.ownership.allows_gameplay():
+                        error = f"OwnershipDeniedError: owner={self.ownership.owner.value}"
+                    elif (
+                        before.scene_stability == SceneStability.TRANSIENT.value
+                        and proposal.action != "WAIT"
+                    ):
+                        # The grace budget is already spent and the scene is still
+                        # unsettled. WAIT may run. Other gameplay input may not.
+                        error = "TransitionInputError: gameplay input refused while the scene is transient"
+                    else:
+                        confirmed = self._confirm_execution(before)
+                        reasoned_mode = derive_battle_view(before.context).mode
+                        confirmed_mode = derive_battle_view(confirmed.context).mode
+                        if reasoned_mode != confirmed_mode:
+                            error = (
+                                f"StaleModeError: reasoned={reasoned_mode.value} "
+                                f"confirmed={confirmed_mode.value}"
+                            )
+                        elif self._scene_went_transient(before):
+                            error = (
+                                "StaleSceneError: reasoned=STABLE confirmed=TRANSIENT"
+                            )
+                        elif self.dry_run:
+                            # execution_ok True means the no-execution policy completed, not that input occurred.
+                            execution_ok = True
+                            consecutive_failures = 0
+                        else:
+                            exec_started = time.perf_counter()
+                            try:
+                                result = self.executor.execute(proposal)
+                            except Exception as exc:
+                                result = ExecutionResult(
+                                    ok=False,
+                                    executed=False,
+                                    released=True,
+                                    error=f"{type(exc).__name__}: {exc}",
+                                )
+                            finally:
+                                self.executor.release_all()
+                            execution_ms = (time.perf_counter() - exec_started) * 1000
+                            executed = result.executed
+                            execution_ok = result.ok
+                            if result.error:
+                                error = result.error
+                            if not result.ok:
+                                consecutive_failures += 1
+                            else:
+                                consecutive_failures = 0
+                                try:
+                                    after_acq = self._acquire()
+                                    after = after_acq.state
+                                except Exception as exc:
+                                    error = f"PerceptionFailedError: {exc}"
+                                    consecutive_failures += 1
+                                    after = before
+                                    after_acq = None
+
+            movement = self._movement(proposal, executed, before, after, after_acq)
             progress = meaningful_progress(before, after, movement=movement)
             screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
             state_changed = after.progress_token != before.progress_token
-            stuck_state = self.stuck.update(
-                fingerprint=after.fingerprint,
-                action=proposal.action if proposal else None,
-                progressed=progress,
-            )
+            skip_stuck = before_acq.suppressed or error.startswith("StaleSceneError")
+            if skip_stuck:
+                stuck_state = self.stuck.state
+                if before_acq.suppressed:
+                    progress = False
+            else:
+                stuck_state = self.stuck.update(
+                    fingerprint=after.fingerprint,
+                    action=proposal.action if proposal else None,
+                    progressed=progress,
+                )
+            saw = before_acq.saw_transition or (after_acq.saw_transition if after_acq else False)
+            passive = before_acq.passive_frames + (after_acq.passive_frames if after_acq else 0)
+            grace_remaining = after_acq.grace_remaining if after_acq else before_acq.grace_remaining
+            transition_state = SceneStability.TRANSIENT.value if saw else SceneStability.STABLE.value
             total_ms = (time.perf_counter() - started) * 1000
             self.history.append(
                 RecentStep(
@@ -211,6 +254,10 @@ class AgentLoop:
                     execution_ms=execution_ms,
                     total_ms=total_ms,
                     interaction_mode=interaction_mode,
+                    scene_stability=before.scene_stability,
+                    transition_state=transition_state,
+                    transition_grace_remaining=grace_remaining,
+                    passive_frames=passive,
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -227,11 +274,121 @@ class AgentLoop:
             dry_run=self.dry_run,
         )
 
-    def _confirm_execution(self, prior):
+    def _can_pump(self) -> bool:
+        return self.ownership.allows_gameplay() and not self.dry_run
+
+    def _can_step_runtime(self) -> bool:
+        observer = self.observer
+        return all(
+            callable(getattr(observer, name, None))
+            for name in ("peek_frame", "passive_advance", "observe_frame")
+        )
+
+    def _acquire(self) -> _Acquisition:
+        if self._can_step_runtime():
+            return self._acquire_steppable()
+        return self._acquire_fallback(self.observer.observe())
+
+    def _acquire_steppable(self) -> _Acquisition:
+        """Pump button-free frames while the scene is transient, then one vision call.
+
+        Tick calls here are runtime progression. They are not MOVE, PRESS, or WAIT.
+        """
+        frame = self.observer.peek_frame()
+        stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
+        passive = 0
+        saw = stability is SceneStability.TRANSIENT
+        if saw and self._can_pump() and self._grace_used < self.transition_grace_frames:
+            while stability is SceneStability.TRANSIENT and self._grace_used < self.transition_grace_frames:
+                chunk = min(
+                    self.transition_chunk_frames,
+                    self.transition_grace_frames - self._grace_used,
+                )
+                if chunk < 1:
+                    break
+                frame = self.observer.passive_advance(chunk)
+                self._grace_used += chunk
+                passive += chunk
+                stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
+                if stability is SceneStability.TRANSIENT:
+                    saw = True
+        if stability is SceneStability.STABLE:
+            self._grace_used = 0
+        elif stability is SceneStability.TRANSIENT:
+            saw = True
+        state = self.observer.observe_frame(frame)
+        return _Acquisition(
+            state=state,
+            passive_frames=passive,
+            saw_transition=saw,
+            grace_remaining=max(0, self.transition_grace_frames - self._grace_used),
+            suppressed=False,
+        )
+
+    def _acquire_fallback(self, state: ObservedState) -> _Acquisition:
+        """Observers that cannot advance frames still get a bounded grace.
+
+        Each observation spends one grace unit. Reasoning is skipped until the
+        budget is gone so a short run of transient states does not escalate stuck.
+        """
+        if state.scene_stability != SceneStability.TRANSIENT.value:
+            self._grace_used = 0
+            return _Acquisition(
+                state=state,
+                passive_frames=0,
+                saw_transition=False,
+                grace_remaining=self.transition_grace_frames,
+                suppressed=False,
+            )
+        if not self._can_pump():
+            return _Acquisition(
+                state=state,
+                passive_frames=0,
+                saw_transition=True,
+                grace_remaining=max(0, self.transition_grace_frames - self._grace_used),
+                suppressed=False,
+            )
+        self._grace_used += 1
+        suppressed = self._grace_used <= self.transition_grace_frames
+        return _Acquisition(
+            state=state,
+            passive_frames=0,
+            saw_transition=True,
+            grace_remaining=max(0, self.transition_grace_frames - self._grace_used),
+            suppressed=suppressed,
+        )
+
+    def _scene_went_transient(self, before: ObservedState) -> bool:
+        if before.scene_stability != SceneStability.STABLE.value:
+            return False
+        probe = getattr(self.observer, "probe_stability", None)
+        if not callable(probe):
+            return False
+        return probe() == SceneStability.TRANSIENT.value
+
+    def _confirm_execution(self, prior: ObservedState) -> ObservedState:
         confirm = getattr(self.observer, "confirm_execution", None)
         if confirm is None:
             return prior
         return confirm(prior)
+
+    def _movement(self, proposal, executed: bool, before: ObservedState, after: ObservedState, after_acq: _Acquisition | None):
+        # A failed re-observe keeps the same object, so there is no after-frame to judge.
+        if executed and after is before and proposal is not None and proposal.action.startswith("MOVE_"):
+            return MovementOutcome.UNCERTAIN
+        stability_after = after.scene_stability
+        if after_acq is not None and after_acq.saw_transition:
+            stability_after = SceneStability.TRANSIENT.value
+        return classify_movement(
+            action=proposal.action if proposal else None,
+            executed=executed,
+            navigation_before=before.navigation_token,
+            navigation_after=after.navigation_token,
+            scene_before=before.scene,
+            scene_after=after.scene,
+            stability_before=before.scene_stability,
+            stability_after=stability_after,
+        )
 
 
 def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
@@ -245,6 +402,7 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
     return (
         f"STEP {step.step}\n"
         f"MODE {label}{transition_line}\n"
+        f"SCENE STABILITY {step.scene_stability}\n"
         f"PERCEPTION\n{step.before_summary}\n"
         f"DECISION\n{action}\n"
         f"REASON\n{reason}\n"
@@ -254,6 +412,9 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
         f"screen_changed={step.screen_changed}\n"
         f"state_changed={step.state_changed}\n"
         f"movement={step.movement_outcome}\n"
+        f"transition={step.transition_state}\n"
+        f"transition_grace_remaining={step.transition_grace_remaining}\n"
+        f"passive_frames={step.passive_frames}\n"
         f"progress={step.progress}\n"
         f"stuck_state={step.stuck_state}\n"
         f"error={step.error or 'none'}\n"

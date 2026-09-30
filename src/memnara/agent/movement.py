@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
 
+from memnara.agent.transition import SceneStability
 from memnara.perception.context import PerceptionContext
 
 # Opaque adapter facts. Values are compared, never interpreted as coordinates.
@@ -121,6 +122,8 @@ def classify_movement(
     navigation_after: str | None,
     scene_before: SceneSignature | None,
     scene_after: SceneSignature | None,
+    stability_before: str | None = None,
+    stability_after: str | None = None,
 ) -> MovementOutcome:
     """Classify one attempted locomotion step.
 
@@ -128,12 +131,17 @@ def classify_movement(
     pixels: equal tokens are BLOCKED and different tokens are MOVED. Without
     tokens, a clear surrounding-scene shift is MOVED. An unchanged whole frame
     is BLOCKED. A stable border with a center-only change is UNCERTAIN.
+    A transient frame on either side is UNCERTAIN: a scene change is not
+    evidence that locomotion succeeded.
     """
     if not executed or not is_locomotion(action):
         return MovementOutcome.NOT_APPLICABLE
     token_outcome = _from_navigation_tokens(navigation_before, navigation_after)
     if token_outcome is not None:
         return token_outcome
+    transient = SceneStability.TRANSIENT.value
+    if stability_before == transient or stability_after == transient:
+        return MovementOutcome.UNCERTAIN
     return _from_scenes(scene_before, scene_after)
 
 

@@ -126,6 +126,35 @@ Repeated collision animations caused false progress and prevented stuck recovery
 
 `MovementOutcome` is `MOVED`, `BLOCKED`, `UNCERTAIN`, or `NOT_APPLICABLE`. It is derived from the before/after observations the loop already has. There is no extra vision call. A clear surrounding-scene shift is `MOVED`. An unchanged whole frame is `BLOCKED`. Equal structured navigation tokens are `BLOCKED`, and different ones are `MOVED`. A stable border with a center-only change is `UNCERTAIN`, not `BLOCKED`, because a fixed camera can move the actor inside that window. `UNCERTAIN` is not navigational progress. Repeated `UNCERTAIN` results with no other progress still feed the existing stuck detector. `PRESS_A`, `PRESS_B`, `PRESS_START`, `PRESS_SELECT`, and `WAIT` are `NOT_APPLICABLE`. Optional generic facts named `position_token`, `navigation_token`, or `location_token` can strengthen the result when both observations carry one. Dialogue, menu, battle, and structured progress tokens still count as progress on their own. Recent outcomes are appended to the existing bounded step history. The existing stuck states are unchanged. `--show-window` is unchanged. No map or pathfinding was added.
 
+## Post-M6 transition-state recovery
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #1 and Patch #2 stay **COMPLETE / APPROVED**. This third patch is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+
+```text
+Temporary scene-transition frames caused false stuck escalation.
+A battle-entry fade reached INTERVENTION_REQUIRED before the battle scene stabilized.
+```
+
+The public loop was also freezing the controlled emulator during vision and reasoning. `AgentLoop` does not tick while it observes or reasons. Frames advanced only inside `GameBoyActionExecutor.execute`.
+
+`SceneStability` is `STABLE` or `TRANSIENT`. It is not an interaction mode and it does not mean battle. A frame is transient when it is nearly black (at least 92% of samples at or below 16 and a mean at or below 18) or nearly uniform (luminance span of 6 or less). Any other frame, including a dark scene that still has lighter structure, is stable. The classifier reads pixels the loop already captured. It does not call the vision model.
+
+While a transient episode is active, Memnara has `AI_CONTROL`, and the run is not a dry run, the observer ticks the same runtime with no button held. The budget is `transition_grace_frames` (default 120), in chunks of `transition_chunk_frames` (default 8). Pixels are re-checked between chunks. A stable frame clears the budget. When the budget is spent, the existing `StuckDetector` runs on the following steps. There is no second stuck machine and no infinite wait. `PAUSED`, `USER_CONTROL`, `CONVERSATION`, and dry-run do not tick.
+
+Those ticks are runtime progression, not a gameplay action. They are not recorded as `MOVE`, `PRESS`, or `WAIT`. One vision call runs on the frame where the pump stops. If that frame is battle-visible, interaction mode is derived then, the same way as any other observation. The fade itself does not set `BATTLE_ACTIVE`.
+
+A locomotion step whose before or after side is transient, or whose re-observation pumped through a transient frame, is `UNCERTAIN` unless both observations carry a navigation token. `screen_changed`, movement outcome, scene stability, and meaningful progress stay separate. A transition does not count as `MOVED`.
+
+If a proposal was made on a stable frame and a probe of the current pixels is transient before execute, the step is `StaleSceneError`. Nothing is executed and the loop does not reason again inside that step. `confirm_execution` still does not capture a frame or call the vision model.
+
+On a frame that is still transient after the budget is spent, the reasoning history gains one line: `SCENE TRANSITIONING. Avoid gameplay inputs until the scene stabilizes. Prefer WAIT.` If the proposal is anything other than `WAIT`, it is not executed (`TransitionInputError`). `WAIT` still goes through the existing 1–180 frame validator. That refusal does not count as a consecutive reasoning failure. The existing stuck detector still sees the step.
+
+A runtime that cannot peek, passively advance, and observe an already captured frame does not get the pump. It spends one grace unit per observation and skips reasoning until that budget is gone, then uses the normal loop. The PyBoy demo observer implements the pump.
+
+CLI lines are `SCENE STABILITY` and, in the result, `transition`, `transition_grace_remaining`, and `passive_frames`. Evidence JSON adds `scene_stability`, `transition_state`, `transition_grace_remaining`, and `passive_frames`. `--show-window` is unchanged: passive ticks use `render=True` on that same adapter.
+
+Synthetic measurement, not a live model run: eight button-free frames, two tick calls, one vision call, one reasoning call, zero button presses. Wall clock was about 0.051s, of which 0.050s was a single reasoning stub sleep. No live speedup number is claimed. The M5 cadence remains the hands-on baseline.
+
 ## Performance
 
-No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step.
+No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step. Post-M6 Patch #3 does not add a vision call per pumped transition frame.

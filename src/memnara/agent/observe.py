@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from memnara.agent.movement import MovementOutcome, SceneSignature, frame_signature, read_navigation_token
+from memnara.agent.transition import frame_stability
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary, fuse
 
@@ -26,6 +27,7 @@ class ObservedState:
     summary: str
     scene: SceneSignature | None = None
     navigation_token: str | None = None
+    scene_stability: str = "STABLE"
 
 
 def quoted_caption_text(description: str) -> str:
@@ -146,13 +148,33 @@ class VisualOnlyObserver(PerceptionObserver):
         self._vision = vision
 
     def observe(self) -> ObservedState:
+        return self.observe_frame(self.peek_frame())
+
+    def peek_frame(self):
+        """Capture the current framebuffer. Does not tick and does not call vision."""
+        return self._emulator.capture_frame()
+
+    def passive_advance(self, frames: int):
+        """Advance frames with no button held, then capture. Not a gameplay action."""
+        if frames < 1:
+            raise ValueError("frames must be >= 1")
+        self._emulator.tick(frames, render=True)
+        return self._emulator.capture_frame()
+
+    def probe_stability(self) -> str:
+        """Pixel stability of the current frame. Does not call vision."""
+        frame = self.peek_frame()
+        return frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format).value
+
+    def observe_frame(self, frame) -> ObservedState:
+        """Run one vision call on a frame the caller already captured."""
         started = time.perf_counter()
-        frame = self._emulator.capture_frame()
         visual = self._vision.observe(frame)
         context = fuse(visual=visual)
         digest = digest_pixels(frame.pixels)
         fingerprint = fingerprint_context(context, None)
         elapsed = (time.perf_counter() - started) * 1000
+        stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
         return ObservedState(
             context=context,
             fingerprint=fingerprint,
@@ -162,5 +184,6 @@ class VisualOnlyObserver(PerceptionObserver):
             summary=compact_summary(context),
             scene=frame_signature(frame.pixels, frame.width, frame.height, frame.pixel_format),
             navigation_token=read_navigation_token(context),
+            scene_stability=stability.value,
         )
 

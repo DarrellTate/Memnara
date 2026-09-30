@@ -88,6 +88,10 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "screen_changed": step.screen_changed,
         "state_changed": step.state_changed,
         "movement_outcome": step.movement_outcome,
+        "scene_stability": step.scene_stability,
+        "transition_state": step.transition_state,
+        "transition_grace_remaining": step.transition_grace_remaining,
+        "passive_frames": step.passive_frames,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {

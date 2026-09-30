@@ -29,6 +29,10 @@ class RecentStep:
     total_ms: float | None = None
     interaction_mode: str = "NON_BATTLE"
     movement_outcome: str = "NOT_APPLICABLE"
+    scene_stability: str = "STABLE"
+    transition_state: str = "STABLE"
+    transition_grace_remaining: int = 0
+    passive_frames: int = 0
 
 
 class StepHistory:
