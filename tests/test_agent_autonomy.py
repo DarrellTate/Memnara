@@ -692,7 +692,7 @@ def test_structured_token_change_is_progress() -> None:
     assert step.screen_changed is False
 
 
-def test_visual_only_description_change_is_progress() -> None:
+def test_visual_only_description_change_on_same_frame_is_not_progress() -> None:
     observer = SequenceObserver(
         [
             _observed(digest="aaa", token=None, description="A quiet bedroom."),
@@ -700,9 +700,10 @@ def test_visual_only_description_change_is_progress() -> None:
         ]
     )
     step = _loop(observer=observer, max_steps=1).run().steps[0]
-    assert step.progress is True
+    assert step.progress is False
     assert step.screen_changed is False
     assert step.state_changed is False
+    assert step.before_fingerprint == step.after_fingerprint
 
 
 def test_dialogue_caption_change_without_visible_text_is_progress() -> None:

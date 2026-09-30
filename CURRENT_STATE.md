@@ -93,6 +93,54 @@ Agent-like behavior        TOO EARLY TO JUDGE
 
 M6 comparison is in [docs/milestones/m6-battle-handling.md](docs/milestones/m6-battle-handling.md). It does not replace this baseline.
 
+## Post-M6 hands-on observations
+
+Recorded from the first real post-M6 run. This section does not replace the baseline above.
+
+```text
+POST-M6 HANDS-ON OBSERVATIONS
+
+Basic perception
+  GOOD for obvious dialogue
+  WEAK for spatial environments
+
+Action choice
+  GOOD for obvious interaction
+  MIXED for navigation
+
+Progress awareness
+  NEEDS INVESTIGATION
+  observed screen_changed=False/state_changed=False with progress=True
+
+Safety/bounded execution
+  GOOD
+
+Reason explainability
+  GOOD
+
+Visual classification
+  NEEDS WORK
+
+Reasoning efficiency
+  NEEDS WORK
+
+Interaction speed
+  BIGGEST PROBLEM
+
+User observability
+  BIG PROBLEM
+  operator cannot currently watch the controlled game instance
+
+Agent-like behavior
+  EARLY / MIXED
+```
+
+The operator opened one emulator and Memnara started another. Those were different processes, so the visible window was not the instance receiving actions.
+
+After the post-M6 validation patch, `--show-window` shows the PyBoy window of the same in-process instance Memnara controls. The historical finding stands: before that flag, the operator could not watch the controlled instance. Default runs stay headless.
+
+Progress awareness: that `progress=True` result was a bug. With no structured token, the visual-only fingerprint included the model's free-form description, so rephrasing an unchanged framebuffer counted as progress. The patch no longer treats that wording change as progress. Spatial scene understanding remains product-quality debt. This patch does not add mapping, pathfinding, or working memory.
+
 ## Open debts
 
 1. Coordinate/facing movement not experimentally proven (M2 private integration).
@@ -109,3 +157,4 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 9. Centralize the duplicated `"battle"` conflict label between fusion and the battle view when a later cleanup is authorized.
 10. Record `confirm_execution` exceptions on the step instead of aborting the loop.
 11. Review battle-view fields that are derived and not read by the loop.
+12. Spatial visual understanding is weak. Mapping, pathfinding, and navigation memory are out of scope until a later authorization.

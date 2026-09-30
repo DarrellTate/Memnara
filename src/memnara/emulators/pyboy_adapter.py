@@ -20,6 +20,10 @@ from memnara.emulators.exceptions import (
 
 NATIVE_WIDTH = 160
 NATIVE_HEIGHT = 144
+# PyBoy 2.7.0 window values: "SDL2", "OpenGL", "GLFW", or "null".
+# "null" is headless. "SDL2" is the in-process visible window.
+HEADLESS_PYBOY_WINDOW = "null"
+VISIBLE_PYBOY_WINDOW = "SDL2"
 
 
 class PyBoyAdapter(EmulatorAdapter):

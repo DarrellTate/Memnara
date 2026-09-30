@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Post-M6 hands-on validation improvement: `--show-window` displays the same in-process PyBoy instance the loop controls. Unchanged-frame description rephrasing is no longer progress. Encounter goals prefer movement over waiting with no visible reason. Not a new milestone.
 - M6 generic battle handling **COMPLETE / APPROVED**. Interaction mode is derived from labeled perception. Ownership still blocks input. A stale mode drops one proposal. No new actions. Live battle proof remains deferred and accepted.
 - Project renamed from GameAI to Memnara before the first public Memnara release.
 - Public package is `memnara`. Demo: `python -m memnara.demo.autonomy`. Environment variables use the `MEMNARA_*` prefix.

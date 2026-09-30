@@ -15,7 +15,7 @@ from memnara.agent.exceptions import (
 )
 from memnara.agent.execute import ActionExecutor, ExecutionResult
 from memnara.agent.history import RecentStep, StepHistory
-from memnara.agent.observe import PerceptionObserver
+from memnara.agent.observe import PerceptionObserver, meaningful_progress
 from memnara.agent.ownership import ControlGate
 from memnara.agent.reasoning import ReasoningProvider
 from memnara.agent.stuck import StuckDetector, StuckState
@@ -166,8 +166,9 @@ class AgentLoop:
                                 consecutive_failures += 1
                                 after = before
 
-            # Fingerprint is semantic (token + flags/text/caption, or visual-only description). Not raw pixels.
-            progress = after.fingerprint != before.fingerprint
+            # Flags, text, caption, and optional token. Description wording counts
+            # only when the framebuffer also changed and no structured token exists.
+            progress = meaningful_progress(before, after)
             screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
             state_changed = after.progress_token != before.progress_token
             stuck_state = self.stuck.update(

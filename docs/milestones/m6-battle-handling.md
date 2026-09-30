@@ -103,6 +103,16 @@ Non-blocking debt recorded at approval. These are not open M6 work:
 - Record `confirm_execution` exceptions on the step instead of aborting the loop.
 - Review battle-view fields that are derived and not read by the loop.
 
+## Post-M6 hands-on validation
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. M7 stays unauthorized.
+
+`--show-window` passes PyBoy's in-process `"SDL2"` window to the one `PyBoyAdapter` shared by the observer and the executor. The default remains `"null"`. The flag does not start a second emulator and does not add a vision call.
+
+The first post-M6 run counted `progress=True` while `screen_changed=False` and `state_changed=False` because the public demo has no structured progress token. The visual-only fingerprint included the full model description, so a rephrased description of the same pixels changed the fingerprint. That wording is no longer progress. A description change counts on the visual-only path only when the framebuffer digest also changes. Dialogue text, menu flags, battle flags, and structured tokens still count without a pixel change.
+
+Generic reasoning now says an exploration or encounter goal should prefer movement, and should not choose `WAIT` only because standing still might cause a movement-triggered encounter. `WAIT` stays allowed when the screen shows a reason to wait. No title-specific encounter rule was added.
+
 ## Performance
 
 No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step.

@@ -20,7 +20,7 @@ from memnara.agent.stuck import StuckConfig, StuckDetector
 from memnara.agent.validator import ActionValidator
 from memnara.config import load_config
 from memnara.emulators.gameplay import GameBoyActionExecutor
-from memnara.emulators.pyboy_adapter import PyBoyAdapter
+from memnara.emulators.pyboy_adapter import VISIBLE_PYBOY_WINDOW, PyBoyAdapter
 from memnara.perception.vision.ollama import OllamaVisionProvider
 from memnara.rom_identity import inspect_rom
 
@@ -37,12 +37,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-intro", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--owner", default="AI_CONTROL", choices=[item.value for item in ControlOwner])
     parser.add_argument(
+        "--show-window",
+        action="store_true",
+        help="Show the PyBoy window of the same instance Memnara controls",
+    )
+    parser.add_argument(
         "--evidence",
         type=Path,
         default=None,
         help="Evidence JSON path (default: D:\\Memnara-Data\\autonomy\\m6_live_autonomy.json)",
     )
     return parser
+
+
+def controlled_window(*, show_window: bool, configured: str) -> str:
+    """Headless unless the operator asks to see the controlled emulator."""
+    if show_window:
+        return VISIBLE_PYBOY_WINDOW
+    return configured
+
+
+def wire_controlled_runtime(adapter, vision):
+    """Observer and executor share one emulator. No second process is created."""
+    return VisualOnlyObserver(adapter, vision), GameBoyActionExecutor(adapter)
 
 
 def skip_intro(adapter: PyBoyAdapter) -> None:
@@ -105,7 +122,10 @@ def main(argv: list[str] | None = None) -> int:
         timeout_s=cfg.reasoning_timeout_s,
         think=False,
     )
-    adapter = PyBoyAdapter(window=cfg.pyboy_window, sound_emulated=False)
+    window = controlled_window(show_window=args.show_window, configured=cfg.pyboy_window)
+    if args.show_window:
+        print("DISPLAY controlled emulator window enabled")
+    adapter = PyBoyAdapter(window=window, sound_emulated=False)
     started = time.perf_counter()
     evidence: dict = {
         "session_id": session_id,
@@ -125,8 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         adapter.start(rom)
         if args.skip_intro:
             skip_intro(adapter)
-        observer = VisualOnlyObserver(adapter, vision)
-        executor = GameBoyActionExecutor(adapter)
+        observer, executor = wire_controlled_runtime(adapter, vision)
         loop = AgentLoop(
             observer=observer,
             reasoner=reasoner,

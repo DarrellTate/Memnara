@@ -65,23 +65,44 @@ def fingerprint_context(
     context: PerceptionContext,
     progress_token: str | None = None,
 ) -> str:
-    """Meaningful-progress fingerprint. Raw framebuffer digest is not included.
+    """Stable semantic fingerprint. Free-form description and raw pixels are excluded.
 
-    With a structured token: flags + visible_text, or a bounded caption if a
-    text-bearing (dialogue/menu) state has no visible_text. Full description is
-    not used, so idle wording jitter does not count as progress.
-
-    Without a token: flags/text plus description as the visual-only fallback.
-    Coordinates are never required.
+    Includes scene flags, visible text, a dialogue/menu caption when visible text
+    is empty, and an optional structured progress token. Coordinates are never
+    required. Two observations of the same flags and token share a fingerprint
+    even if the model rephrases the description.
     """
     vis = semantic_visual_key(context)
     token = progress_token or ""
-    if token:
-        raw = f"{vis}||{token}"
-    else:
-        description = "" if context.visual is None else context.visual.description
-        raw = f"{vis}|{description}"
+    raw = f"{vis}||{token}"
     return sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _visual_description(context: PerceptionContext) -> str:
+    if context.visual is None:
+        return ""
+    return context.visual.description
+
+
+def meaningful_progress(before: ObservedState, after: ObservedState) -> bool:
+    """Whether the step made gameplay progress.
+
+    Flag, text, caption, and structured-token changes count even if the
+    framebuffer is unchanged. Free-form description wording counts only for
+    visual-only play (no progress token) and only together with a framebuffer
+    change. The same pixels rephrased by the model are not progress. A pixel
+    change with an unchanged description is not progress.
+    """
+    if semantic_visual_key(before.context) != semantic_visual_key(after.context):
+        return True
+    if (before.progress_token or "") != (after.progress_token or ""):
+        return True
+    if before.progress_token or after.progress_token:
+        return False
+    screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
+    if not screen_changed:
+        return False
+    return _visual_description(before.context) != _visual_description(after.context)
 
 
 def digest_pixels(pixels: bytes) -> str:

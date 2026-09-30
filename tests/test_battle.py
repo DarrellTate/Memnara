@@ -224,6 +224,7 @@ def test_battle_prompt_is_exactly_the_generic_block_plus_evidence() -> None:
         "- Short reason only: why this one action might make progress.\n"
         "- If the scene looks like a menu or dialogue, PRESS_A or PRESS_B or WAIT may be more appropriate than walking.\n"
         "- If evidence shows a battle, you may still use generic buttons; you do not have battle strategy.\n"
+        "- If the goal is to explore or move through terrain to trigger an encounter, prefer a movement action. Do not choose WAIT only because standing still might cause a movement-triggered encounter. WAIT remains valid when visible evidence shows waiting is useful, such as dialogue, a menu, or an animation that is still changing.\n"
         "\n"
         "Return JSON matching the schema: action, optional parameters, reason, optional confidence (0-1).\n"
     )
