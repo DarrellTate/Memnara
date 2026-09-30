@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from memnara.agent.actions import ActionRegistry, DEFAULT_GAMEPLAY_ACTIONS
+from memnara.agent.battle import mode_transition
 from memnara.agent.history import RecentStep
 from memnara.agent.loop import AgentLoop, format_step
 from memnara.agent.observe import VisualOnlyObserver
@@ -25,7 +26,9 @@ from memnara.rom_identity import inspect_rom
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Memnara Milestone 5 bounded autonomy demo")
+    parser = argparse.ArgumentParser(
+        description="Memnara bounded autonomy demo (generic battle handling included)"
+    )
     parser.add_argument("--rom", type=Path, default=None, help="Operator ROM path")
     parser.add_argument("--max-steps", type=int, default=5)
     parser.add_argument("--model", default=None)
@@ -37,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence",
         type=Path,
         default=None,
-        help="Evidence JSON path (default: D:\\Memnara-Data\\autonomy\\m5_live_autonomy_final.json)",
+        help="Evidence JSON path (default: D:\\Memnara-Data\\autonomy\\m6_live_autonomy.json)",
     )
     return parser
 
@@ -50,10 +53,12 @@ def skip_intro(adapter: PyBoyAdapter) -> None:
         adapter.tick(8, render=True)
 
 
-def step_record(step: RecentStep) -> dict:
+def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
     proposal = step.proposal
     return {
         "step": step.step,
+        "interaction_mode": step.interaction_mode,
+        "mode_transition": mode_transition(previous_mode, step.interaction_mode),
         "goal_progressed": step.progress,
         "before_perception_summary": step.before_summary,
         "action": proposal.action if proposal else None,
@@ -86,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     identity = inspect_rom(rom)
     session_id = str(uuid.uuid4())
-    evidence_path = args.evidence or (cfg.autonomy_dir / "m5_live_autonomy_final.json")
+    evidence_path = args.evidence or (cfg.autonomy_dir / "m6_live_autonomy.json")
     vision = OllamaVisionProvider(
         endpoint=cfg.ollama_host,
         model=cfg.vision_model,
@@ -136,11 +141,15 @@ def main(argv: list[str] | None = None) -> int:
         result = loop.run()
         evidence["halt_reason"] = result.halt_reason
         evidence["stuck_state"] = result.stuck_state
-        evidence["steps"] = [step_record(item) for item in result.steps]
-        evidence["elapsed_s"] = time.perf_counter() - started
+        previous_mode = None
+        records = []
         for item in result.steps:
-            print(format_step(item))
+            records.append(step_record(item, previous_mode=previous_mode))
+            print(format_step(item, previous_mode=previous_mode))
             print("-" * 40)
+            previous_mode = item.interaction_mode
+        evidence["steps"] = records
+        evidence["elapsed_s"] = time.perf_counter() - started
         print(f"HALT {result.halt_reason} stuck={result.stuck_state}")
         print(f"evidence {evidence_path}")
         return 0

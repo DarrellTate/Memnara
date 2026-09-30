@@ -95,6 +95,14 @@ class PerceptionObserver(ABC):
     def observe(self) -> ObservedState:
         """Return fused M4 context plus optional progress token."""
 
+    def confirm_execution(self, prior: ObservedState) -> ObservedState:
+        """Cheap pre-execute check. Default keeps the reasoned observation.
+
+        Must not call a vision model, capture a frame, or treat pixel animation
+        as an interaction-mode change. The loop compares battle mode itself.
+        """
+        return prior
+
 
 class VisualOnlyObserver(PerceptionObserver):
     """Generic VISION + INPUT observer. No structured game-state adapter."""

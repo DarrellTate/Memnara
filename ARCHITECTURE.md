@@ -18,6 +18,7 @@ optional local GameAdapter (private)
 M3 local VLM vision
 M4 source-aware perception fusion
 M5 bounded autonomous control loop
+M6 generic battle interaction mode
 ```
 
 ```text
@@ -33,7 +34,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy. M0–M5 are **COMPLETE / APPROVED**. M6 battle strategy is **NEXT / NOT AUTHORIZED**.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling. M0–M5 are **COMPLETE / APPROVED**. M6 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**.
 
 ## Runtime families (design)
 
@@ -203,7 +204,7 @@ Keep context small enough for local 8B (retrieve K memories, not the DB). M4 fus
 
 ## Actions
 
-**Current (M5 emulator demo):** allowlisted `MOVE_UP` / `MOVE_DOWN` / `MOVE_LEFT` / `MOVE_RIGHT` / `PRESS_A` / `PRESS_B` / `PRESS_START` / `PRESS_SELECT` / `WAIT`. The model proposes one `ActionProposal`; `ActionValidator` rejects unknown or malformed output (only `action`/`parameters`/`reason`/`confidence`; no model-owned metadata). `GameBoyActionExecutor` maps names onto `EmulatorAdapter.press_button` / `tick`. Stuck v1 uses a semantic progress fingerprint, not raw framebuffer digest, when a structured token exists. No RAM writes. No shell. Battle-specific actions are M6.
+**Current (M5–M6 emulator demo):** allowlisted `MOVE_UP` / `MOVE_DOWN` / `MOVE_LEFT` / `MOVE_RIGHT` / `PRESS_A` / `PRESS_B` / `PRESS_START` / `PRESS_SELECT` / `WAIT`. The model proposes one `ActionProposal`; `ActionValidator` rejects unknown or malformed output (only `action`/`parameters`/`reason`/`confidence`; no model-owned metadata). `GameBoyActionExecutor` maps names onto `EmulatorAdapter.press_button` / `tick`. Stuck v1 uses a semantic progress fingerprint, not raw framebuffer digest, when a structured token exists. No RAM writes. No shell. M6 does not add battle-specific action names. `derive_battle_view` marks `BATTLE_ACTIVE` when visual `battle_visible` or optional `is_in_battle` is true. M4 conflicts stay labeled. Ownership is checked before that mode can allow an action. A cheap `confirm_execution` can drop a proposal if the mode changed; the visual-only default does not call the VLM again.
 
 **Future allowlisted families (not implemented):** `key_press` / `key_hold` / `key_release`, `mouse_move` / `mouse_click`, `controller_button` / `controller_stick`. High-level title-specific names are not registered in M5.
 

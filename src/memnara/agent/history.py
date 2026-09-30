@@ -27,6 +27,7 @@ class RecentStep:
     reasoning_ms: float | None = None
     execution_ms: float | None = None
     total_ms: float | None = None
+    interaction_mode: str = "NON_BATTLE"
 
 
 class StepHistory:
@@ -47,5 +48,7 @@ class StepHistory:
         lines: list[str] = []
         for item in self._items[-limit:]:
             action = item.proposal.action if item.proposal else "NONE"
-            lines.append(f"{item.step}:{action}:progress={item.progress}:stuck={item.stuck_state}")
+            lines.append(
+                f"{item.step}:{item.interaction_mode}:{action}:progress={item.progress}:stuck={item.stuck_state}"
+            )
         return tuple(lines)

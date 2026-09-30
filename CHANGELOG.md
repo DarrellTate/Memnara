@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- M6 generic battle handling: interaction mode derived from labeled perception, battle-aware prompt, ownership still blocks input, stale mode drops one proposal, CLI prints mode and entry/exit. No new actions. Awaiting ChatGPT review.
 - Project renamed from GameAI to Memnara before the first public Memnara release.
 - Public package is `memnara`. Demo: `python -m memnara.demo.autonomy`. Environment variables use the `MEMNARA_*` prefix.
 - Canonical source is `D:\Memnara`. Runtime data is `D:\Memnara-Data`. Operator ROM directory is `D:\Memnara_Roms`.

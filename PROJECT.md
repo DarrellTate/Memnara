@@ -2,7 +2,7 @@
 
 Local, multi-runtime AI gaming companion: observe, reason, control, remember, and comment across **emulator-backed** and **native PC** game runtimes. Persistent identity, vision, optional approved RAM, voice, conversation, and validated input. Not a hard-coded bot.
 
-**Current implementation:** PyBoy, optional local GameAdapter (private), M3 local VLM vision, M4 perception fusion, M5 bounded autonomy. SNES, PS1, DuckStation, and native Windows gameplay are **not** built.
+**Current implementation:** PyBoy, optional local GameAdapter (private), M3 local VLM vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling (awaiting ChatGPT review). SNES, PS1, DuckStation, and native Windows gameplay are **not** built.
 
 **First reference / testbed:** a locally supplied Game Boy title via PyBoy. Enhanced structured-state maps are private, not public core.
 
@@ -37,7 +37,7 @@ Generic play path: **VISION + INPUT**. RAM is an enhancement.
 | RAM (fair) | games adapter | M2 | Parser tests vs dump hash |
 | Perception fusion | state builder | M4 | Labeled context tests |
 | Basic control | control + loop | M5 | Navigate a known area (emulator reference) |
-| Battles | local GameAdapter | M6 | Complete a battle |
+| Generic battle handling | agent loop | M6 | Recognize a battle from labeled perception and take bounded actions. Awaiting review. Not title-expert play. |
 | Memory persist | memory | M7 | Restart recall; profile-aware; session memory; CRUD/reset primitives |
 | Compression / retrieval | memory | M8 | Consolidation; FTS5; lineage |
 | Game knowledge packs | knowledge | M8A | Local RAG; packs not personal memory |

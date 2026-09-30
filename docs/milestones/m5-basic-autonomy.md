@@ -141,7 +141,7 @@ Loop bounds: `max_steps` and `max_consecutive_failures` on `AgentLoop`. Stuck re
 
 ## Battle
 
-M4 may label battle. M5 may press generic buttons. No battle strategy. M6 is unauthorized.
+M4 may label battle. M5 may press generic buttons. M5 itself has no battle strategy. M6 adds generic battle mode on this loop and is awaiting ChatGPT review.
 
 ## User demo / feedback questions
 

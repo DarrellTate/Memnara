@@ -4,19 +4,20 @@
 LAST APPROVED MILESTONE: 5
 CURRENT WORK: 6
 MILESTONE 5 STATUS: COMPLETE / APPROVED
-MILESTONE 6: NEXT / NOT AUTHORIZED
-MILESTONE 6 AUTHORIZED: NO
-APPLICATION IMPLEMENTATION: M5 BASIC AUTONOMOUS CONTROL
+MILESTONE 6: IMPLEMENTED / AWAITING CHATGPT REVIEW
+MILESTONE 6 AUTHORIZED: YES
+MILESTONE 7 AUTHORIZED: NO
+APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
 ```
 
 ```text
 M0–M5 COMPLETE / APPROVED
-M6 NEXT
-M6 AUTHORIZED NO
+M6 IMPLEMENTED / AWAITING CHATGPT REVIEW
+M7 AUTHORIZED NO
 ```
 
-Milestones 0–5 are complete and approved. Milestone 6 battle handling is next and remains unauthorized. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M6 implementation.
+Milestones 0–5 are complete and approved. Milestone 6 generic battle handling is implemented and awaiting ChatGPT review. It is not approved complete. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy. Enhanced structured-state adapters are local/private.
 
@@ -28,6 +29,7 @@ optional local GameAdapter (not in public repo)
 M3 local VLM vision
 M4 source-aware perception fusion
 M5 bounded autonomous control loop
+M6 generic battle interaction mode on that loop
 ```
 
 ```text
@@ -73,6 +75,26 @@ Tracked `/docs` in Git is engineering knowledge, not runtime data and not a ship
 ## Decisions
 
 ADR-001 through ADR-008 are **ACCEPTED**.
+
+## First hands-on UX baseline
+
+Recorded from the first hands-on M5 run on the generic public VISION + INPUT path. Do not overwrite this baseline with later results. That run advanced an in-game dialogue sequence. Observed normal post-warmup cadence was roughly several seconds per action. The first visual inference was substantially slower.
+
+```text
+Basic perception           GOOD
+Action choice              GOOD
+Progress awareness         GOOD
+Safety/bounded execution   GOOD
+Reason explainability      GOOD
+
+Visual classification      NEEDS WORK
+Reasoning efficiency       NEEDS WORK
+Interaction speed          BIGGEST PROBLEM
+User observability         NEEDS WORK
+Agent-like behavior        TOO EARLY TO JUDGE
+```
+
+M6 comparison is in [docs/milestones/m6-battle-handling.md](docs/milestones/m6-battle-handling.md). It does not replace this baseline.
 
 ## Open debts
 

@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from memnara.agent.actions import ActionProposal
+from memnara.agent.battle import derive_battle_view, mode_label, mode_transition
 from memnara.agent.exceptions import (
     InvalidActionError,
     MalformedProposalError,
@@ -80,6 +81,7 @@ class AgentLoop:
             reasoning_ms: float | None = None
             execution_ms: float | None = None
             after = before
+            interaction_mode = derive_battle_view(before.context).mode.value
             reason_started = time.perf_counter()
             try:
                 proposal = self.reasoner.propose(
@@ -122,38 +124,47 @@ class AgentLoop:
             if validation_ok and proposal is not None:
                 if not self.ownership.allows_gameplay():
                     error = f"OwnershipDeniedError: owner={self.ownership.owner.value}"
-                elif self.dry_run:
-                    # execution_ok True means the no-execution policy completed, not that input occurred.
-                    execution_ok = True
-                    consecutive_failures = 0
                 else:
-                    exec_started = time.perf_counter()
-                    try:
-                        result = self.executor.execute(proposal)
-                    except Exception as exc:
-                        result = ExecutionResult(
-                            ok=False,
-                            executed=False,
-                            released=True,
-                            error=f"{type(exc).__name__}: {exc}",
+                    confirmed = self._confirm_execution(before)
+                    reasoned_mode = derive_battle_view(before.context).mode
+                    confirmed_mode = derive_battle_view(confirmed.context).mode
+                    if reasoned_mode != confirmed_mode:
+                        error = (
+                            f"StaleModeError: reasoned={reasoned_mode.value} "
+                            f"confirmed={confirmed_mode.value}"
                         )
-                    finally:
-                        self.executor.release_all()
-                    execution_ms = (time.perf_counter() - exec_started) * 1000
-                    executed = result.executed
-                    execution_ok = result.ok
-                    if result.error:
-                        error = result.error
-                    if not result.ok:
-                        consecutive_failures += 1
-                    else:
+                    elif self.dry_run:
+                        # execution_ok True means the no-execution policy completed, not that input occurred.
+                        execution_ok = True
                         consecutive_failures = 0
+                    else:
+                        exec_started = time.perf_counter()
                         try:
-                            after = self.observer.observe()
+                            result = self.executor.execute(proposal)
                         except Exception as exc:
-                            error = f"PerceptionFailedError: {exc}"
+                            result = ExecutionResult(
+                                ok=False,
+                                executed=False,
+                                released=True,
+                                error=f"{type(exc).__name__}: {exc}",
+                            )
+                        finally:
+                            self.executor.release_all()
+                        execution_ms = (time.perf_counter() - exec_started) * 1000
+                        executed = result.executed
+                        execution_ok = result.ok
+                        if result.error:
+                            error = result.error
+                        if not result.ok:
                             consecutive_failures += 1
-                            after = before
+                        else:
+                            consecutive_failures = 0
+                            try:
+                                after = self.observer.observe()
+                            except Exception as exc:
+                                error = f"PerceptionFailedError: {exc}"
+                                consecutive_failures += 1
+                                after = before
 
             # Fingerprint is semantic (token + flags/text/caption, or visual-only description). Not raw pixels.
             progress = after.fingerprint != before.fingerprint
@@ -185,6 +196,7 @@ class AgentLoop:
                     reasoning_ms=reasoning_ms,
                     execution_ms=execution_ms,
                     total_ms=total_ms,
+                    interaction_mode=interaction_mode,
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -201,14 +213,24 @@ class AgentLoop:
             dry_run=self.dry_run,
         )
 
+    def _confirm_execution(self, prior):
+        confirm = getattr(self.observer, "confirm_execution", None)
+        if confirm is None:
+            return prior
+        return confirm(prior)
 
-def format_step(step: RecentStep) -> str:
+
+def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
     action = step.proposal.action if step.proposal else "NONE"
     reason = step.proposal.reason if step.proposal else ""
     confidence = step.proposal.confidence if step.proposal else None
     conf_text = f"{confidence:.2f}" if isinstance(confidence, float) else "unspecified"
+    label = mode_label(step.interaction_mode)
+    transition = mode_transition(previous_mode, step.interaction_mode)
+    transition_line = f"\nTRANSITION {transition}" if transition else ""
     return (
         f"STEP {step.step}\n"
+        f"MODE {label}{transition_line}\n"
         f"PERCEPTION\n{step.before_summary}\n"
         f"DECISION\n{action}\n"
         f"REASON\n{reason}\n"

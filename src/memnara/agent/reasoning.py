@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from memnara.agent.actions import ActionProposal
+from memnara.agent.battle import BATTLE_PROMPT_BLOCK, InteractionMode, derive_battle_view
 from memnara.agent.validator import ActionValidator
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary
@@ -52,7 +53,12 @@ def build_user_prompt(
     allowed_text = ", ".join(sorted(allowed))
     hist = "\n".join(history_lines) if history_lines else "(none)"
     discouraged_text = ", ".join(discouraged) if discouraged else "(none)"
+    view = derive_battle_view(context)
+    battle_block = ""
+    if view.mode is InteractionMode.BATTLE_ACTIVE:
+        battle_block = BATTLE_PROMPT_BLOCK + "\n"
     return (
+        f"{battle_block}"
         f"GOAL: {goal}\n"
         f"ALLOWED_ACTIONS: {allowed_text}\n"
         f"STUCK_STATE: {stuck_state}\n"
