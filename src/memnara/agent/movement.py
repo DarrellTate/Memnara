@@ -33,11 +33,13 @@ class MovementOutcome(str, Enum):
 class SceneSignature:
     """Coarse scene structure from one framebuffer. Not a sprite or tile map.
 
-    The digest covers the surrounding scene only. The central window is omitted
-    so an in-place animation does not look like a scene change.
+    ``border_digest`` is the surrounding scene. ``center_digest`` is the central
+    window. Pixel ``BLOCKED`` requires both to match, which means the whole frame
+    is unchanged. A stable border with a different center is not blocked.
     """
 
     border_digest: str
+    center_digest: str
     horizontal: tuple[int, ...]
     vertical: tuple[int, ...]
 
@@ -79,7 +81,7 @@ def frame_signature(pixels: bytes, width: int, height: int, pixel_format: str) -
     if x1 <= x0 or y1 <= y0:
         return None
     border = bytearray()
-    center_count = 0
+    center = bytearray()
     columns = [0] * width
     column_counts = [0] * width
     rows = [0] * height
@@ -90,7 +92,7 @@ def frame_signature(pixels: bytes, width: int, height: int, pixel_format: str) -
             value = row[x]
             in_center = x0 <= x < x1 and y0 <= y < y1
             if in_center:
-                center_count += 1
+                center.append(value)
                 continue
             border.append(value)
             # Top and bottom bands: surrounding scene, full width, actor window excluded.
@@ -101,10 +103,11 @@ def frame_signature(pixels: bytes, width: int, height: int, pixel_format: str) -
             if x < x0 or x >= x1:
                 rows[y] += value
                 row_counts[y] += 1
-    if not border or center_count == 0 or 0 in column_counts or 0 in row_counts:
+    if not border or not center or 0 in column_counts or 0 in row_counts:
         return None
     return SceneSignature(
         border_digest=_digest(border),
+        center_digest=_digest(center),
         horizontal=tuple(columns[i] // column_counts[i] for i in range(width)),
         vertical=tuple(rows[i] // row_counts[i] for i in range(height)),
     )
@@ -122,8 +125,9 @@ def classify_movement(
     """Classify one attempted locomotion step.
 
     Structured navigation tokens, when both sides have them, are stronger than
-    pixels. Otherwise a stable surrounding scene is BLOCKED, a clear scene
-    shift is MOVED, and everything else is UNCERTAIN.
+    pixels: equal tokens are BLOCKED and different tokens are MOVED. Without
+    tokens, a clear surrounding-scene shift is MOVED. An unchanged whole frame
+    is BLOCKED. A stable border with a center-only change is UNCERTAIN.
     """
     if not executed or not is_locomotion(action):
         return MovementOutcome.NOT_APPLICABLE
@@ -146,8 +150,12 @@ def _from_navigation_tokens(before: str | None, after: str | None) -> MovementOu
 def _from_scenes(before: SceneSignature | None, after: SceneSignature | None) -> MovementOutcome:
     if before is None or after is None:
         return MovementOutcome.UNCERTAIN
-    if before.border_digest and before.border_digest == after.border_digest:
+    border_stable = bool(before.border_digest) and before.border_digest == after.border_digest
+    center_stable = bool(before.center_digest) and before.center_digest == after.center_digest
+    if border_stable and center_stable:
         return MovementOutcome.BLOCKED
+    if border_stable:
+        return MovementOutcome.UNCERTAIN
     if _axis_shifted(before.horizontal, after.horizontal) or _axis_shifted(before.vertical, after.vertical):
         return MovementOutcome.MOVED
     return MovementOutcome.UNCERTAIN

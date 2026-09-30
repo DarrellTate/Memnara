@@ -152,7 +152,7 @@ Screen-level visual change was insufficient to determine navigation success.
 Repeated collision animations caused false progress and prevented stuck recovery.
 ```
 
-The second patch keeps `screen_changed` separate from a movement outcome (`MOVED`, `BLOCKED`, `UNCERTAIN`, `NOT_APPLICABLE`) derived from the before/after observations already collected. A stable surrounding scene is not treated as a successful move. This patch is implemented and awaiting ChatGPT review. It does not add a map, pathfinding, or working memory.
+The second patch keeps `screen_changed` separate from a movement outcome (`MOVED`, `BLOCKED`, `UNCERTAIN`, `NOT_APPLICABLE`) derived from the before/after observations already collected. A clear scene shift is `MOVED`. An unchanged whole frame, or an equal structured navigation token, is `BLOCKED`. A stable border with a center-only change is `UNCERTAIN` and is not progress. Repeated uncertain attempts still feed the existing stuck detector. This patch is implemented and awaiting ChatGPT review. It does not add a map, pathfinding, or working memory.
 
 ## Open debts
 
@@ -171,4 +171,4 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 10. Record `confirm_execution` exceptions on the step instead of aborting the loop.
 11. Review battle-view fields that are derived and not read by the loop.
 12. Spatial visual understanding is weak. Mapping, pathfinding, and navigation memory are out of scope until a later authorization.
-13. Visual movement classification can treat a short step that stays inside the actor window, with a stable surrounding scene, as BLOCKED. Unstructured scene changes stay UNCERTAIN. No map was added.
+13. A fixed-camera step that stays inside the central window is `UNCERTAIN`. It is not called `BLOCKED`, and it is not called a successful move, until a scene shift or a structured navigation token is available. No map was added.

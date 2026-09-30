@@ -204,7 +204,7 @@ def _native_bump(pixels: bytes) -> bytes:
     return bytes(raw)
 
 
-def test_native_framebuffer_scroll_is_moved_and_center_bump_is_blocked() -> None:
+def test_native_framebuffer_scroll_is_moved_and_center_change_is_uncertain() -> None:
     before = _native_frame(0)
     scrolled = _native_frame(16)
     bumped = _native_bump(before)
@@ -216,7 +216,7 @@ def test_native_framebuffer_scroll_is_moved_and_center_bump_is_blocked() -> None
         scene_before=frame_signature(before, 160, 144, "RGBA"),
         scene_after=frame_signature(scrolled, 160, 144, "RGBA"),
     )
-    blocked = classify_movement(
+    uncertain = classify_movement(
         action="MOVE_RIGHT",
         executed=True,
         navigation_before=None,
@@ -225,7 +225,7 @@ def test_native_framebuffer_scroll_is_moved_and_center_bump_is_blocked() -> None
         scene_after=frame_signature(bumped, 160, 144, "RGBA"),
     )
     assert moved is MovementOutcome.MOVED
-    assert blocked is MovementOutcome.BLOCKED
+    assert uncertain is MovementOutcome.UNCERTAIN
 
 
 def test_scene_shift_is_moved() -> None:
@@ -250,7 +250,15 @@ def test_vertical_scene_shift_is_moved() -> None:
     assert outcome is MovementOutcome.MOVED
 
 
-def test_local_animation_with_stable_scene_is_blocked() -> None:
+def test_identical_frame_after_move_is_blocked() -> None:
+    frame = _base_frame()
+    step = _run([_state(frame), _state(frame)]).history.items[0]
+    assert step.screen_changed is False
+    assert step.movement_outcome == MovementOutcome.BLOCKED.value
+    assert step.progress is False
+
+
+def test_center_only_change_is_uncertain_and_not_progress() -> None:
     step = _run(
         [
             _state(_base_frame(), description="maze-like structure"),
@@ -259,11 +267,38 @@ def test_local_animation_with_stable_scene_is_blocked() -> None:
     ).history.items[0]
     assert step.screen_changed is True
     assert step.state_changed is False
-    assert step.movement_outcome == MovementOutcome.BLOCKED.value
+    assert step.movement_outcome == MovementOutcome.UNCERTAIN.value
     assert step.progress is False
     rendered = format_step(step)
-    assert "movement=BLOCKED" in rendered
+    assert "movement=UNCERTAIN" in rendered
     assert "progress=False" in rendered
+
+
+def test_fixed_camera_shift_inside_the_center_is_not_blocked() -> None:
+    """Actor relocates inside the central window. The border stays put."""
+
+    def placed(offset: int) -> bytes:
+        raw = bytearray(_base_frame())
+        x0 = WIDTH // 4 + 1 + offset
+        y0 = HEIGHT // 4 + 1
+        for y in range(y0, y0 + 2):
+            for x in range(x0, x0 + 2):
+                index = (y * WIDTH + x) * 3
+                raw[index : index + 3] = b"\xff\xff\xff"
+        return bytes(raw)
+
+    before_pixels = placed(0)
+    after_pixels = placed(3)
+    before_scene = frame_signature(before_pixels, WIDTH, HEIGHT, "RGB")
+    after_scene = frame_signature(after_pixels, WIDTH, HEIGHT, "RGB")
+    assert before_scene is not None and after_scene is not None
+    assert before_scene.border_digest == after_scene.border_digest
+    assert before_scene.center_digest != after_scene.center_digest
+    step = _run([_state(before_pixels), _state(after_pixels)]).history.items[0]
+    assert step.screen_changed is True
+    assert step.movement_outcome == MovementOutcome.UNCERTAIN.value
+    assert step.movement_outcome != MovementOutcome.BLOCKED.value
+    assert step.progress is False
 
 
 def test_ambiguous_scene_change_is_uncertain_and_not_progress() -> None:
@@ -342,11 +377,11 @@ def test_dialogue_menu_and_battle_progress_stay_independent_of_movement() -> Non
             _state(blocked[1], battle_visible=True),
         ]
     ).history.items[0]
-    assert dialogue.movement_outcome == MovementOutcome.BLOCKED.value
+    assert dialogue.movement_outcome == MovementOutcome.UNCERTAIN.value
     assert dialogue.progress is True
-    assert menu.movement_outcome == MovementOutcome.BLOCKED.value
+    assert menu.movement_outcome == MovementOutcome.UNCERTAIN.value
     assert menu.progress is True
-    assert entry.movement_outcome == MovementOutcome.BLOCKED.value
+    assert entry.movement_outcome == MovementOutcome.UNCERTAIN.value
     assert entry.progress is True
     assert derive_battle_view(_state(blocked[1], battle_visible=True).context).mode is InteractionMode.BATTLE_ACTIVE
 
@@ -372,13 +407,13 @@ def test_battle_exit_and_structured_token_still_progress() -> None:
     assert token_step.movement_outcome == MovementOutcome.BLOCKED.value
 
 
-def test_repeated_blocked_direction_escalates_stuck_and_discourages_it() -> None:
+def test_repeated_uncertain_direction_escalates_stuck_and_discourages_it() -> None:
     states = [_state(_bumped_frame(200 + index), description=f"wording {index}") for index in range(8)]
     reasoner = ScriptedReasoner("MOVE_RIGHT")
     detector = StuckDetector(StuckConfig(unchanged_limit=9, same_action_limit=3, max_recovery_attempts=8))
     loop = _run(states, reasoner=reasoner, stuck=detector, max_steps=4)
     steps = loop.history.items
-    assert [item.movement_outcome for item in steps] == ["BLOCKED"] * 4
+    assert [item.movement_outcome for item in steps] == ["UNCERTAIN"] * 4
     assert [item.progress for item in steps] == [False] * 4
     assert all(item.screen_changed for item in steps)
     assert steps[2].stuck_state == "SUSPECTED_STUCK"
@@ -386,37 +421,38 @@ def test_repeated_blocked_direction_escalates_stuck_and_discourages_it() -> None
     assert "MOVE_RIGHT" in reasoner.discouraged[-1]
 
 
-def test_alternating_blocked_directions_still_accumulate_no_progress() -> None:
+def test_alternating_uncertain_directions_still_accumulate_no_progress() -> None:
     states = [_state(_bumped_frame(180 + index)) for index in range(6)]
     detector = StuckDetector(StuckConfig(unchanged_limit=2, same_action_limit=99, max_recovery_attempts=8))
     reasoner = ScriptedReasoner(["MOVE_RIGHT", "MOVE_UP", "MOVE_LEFT"])
     steps = _run(states, reasoner=reasoner, stuck=detector, max_steps=3).history.items
-    assert [item.movement_outcome for item in steps] == ["BLOCKED"] * 3
+    assert [item.movement_outcome for item in steps] == ["UNCERTAIN"] * 3
     assert [item.progress for item in steps] == [False] * 3
     assert steps[-1].stuck_state == "SUSPECTED_STUCK"
 
 
 def test_moved_after_blocks_resets_stuck() -> None:
-    blocked = [_state(_bumped_frame(210)) for _ in range(6)]
+    uncertain = [_state(_bumped_frame(200 + index)) for index in range(6)]
     detector = StuckDetector(StuckConfig(unchanged_limit=2, same_action_limit=99, max_recovery_attempts=8))
     steps = _run(
-        blocked + [_state(_base_frame()), _state(_shifted_frame(1), description="The scene has shifted.")],
+        uncertain + [_state(_base_frame()), _state(_shifted_frame(1), description="The scene has shifted.")],
         stuck=detector,
         max_steps=4,
     ).history.items
+    assert [item.movement_outcome for item in steps[:3]] == ["UNCERTAIN"] * 3
     assert steps[2].stuck_state == "SUSPECTED_STUCK"
     assert steps[3].movement_outcome == MovementOutcome.MOVED.value
     assert steps[3].progress is True
     assert steps[3].stuck_state == "NORMAL"
 
 
-def test_recent_blocked_outcomes_are_bounded_history() -> None:
+def test_recent_uncertain_outcomes_are_bounded_history() -> None:
     states = [_state(_bumped_frame(190 + index)) for index in range(12)]
     reasoner = ScriptedReasoner("MOVE_RIGHT")
     loop = _run(states, reasoner=reasoner, max_steps=6)
-    assert reasoner.history[1] == ("MOVE_RIGHT → BLOCKED",)
+    assert reasoner.history[1] == ("MOVE_RIGHT → UNCERTAIN",)
     assert len(loop.history.action_lines()) == 4
-    assert loop.history.action_lines()[-1] == "MOVE_RIGHT → BLOCKED"
+    assert loop.history.action_lines()[-1] == "MOVE_RIGHT → UNCERTAIN"
     assert len(loop.history.items) == 6
     prompt = build_user_prompt(
         context=states[0].context,
@@ -426,7 +462,8 @@ def test_recent_blocked_outcomes_are_bounded_history() -> None:
         discouraged=("MOVE_RIGHT",),
         history_lines=loop.history.action_lines(),
     )
-    assert "MOVE_RIGHT → BLOCKED" in prompt
+    assert "MOVE_RIGHT → UNCERTAIN" in prompt
+    assert "movement success was not established" in SYSTEM_PROMPT
     assert "prefer a different direction" in SYSTEM_PROMPT
     history = StepHistory(maxlen=2)
     for item in loop.history.items:
@@ -440,7 +477,7 @@ def test_recent_blocked_outcomes_are_bounded_history() -> None:
 def test_evidence_records_movement_outcome() -> None:
     step = _run([_state(_base_frame()), _state(_bumped_frame(255))]).history.items[0]
     record = step_record(step)
-    assert record["movement_outcome"] == "BLOCKED"
+    assert record["movement_outcome"] == "UNCERTAIN"
     assert "screen_changed" in record
     assert "state_changed" in record
 
