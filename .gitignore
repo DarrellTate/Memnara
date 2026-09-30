@@ -1,0 +1,94 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# Operator/ChatGPT prompt archives (local only; never commit)
+prompts/
+/prompt_*.txt
+/promt_*.txt
+
+# Local/private game integrations (never commit).
+# Canonical packs live outside this repo at D:\Memnara-Integrations.
+integrations-local/
+private-integrations/
+
+roms/
+*.gb
+*.gbc
+*.gba
+*.nes
+*.sfc
+*.smc
+*.n64
+*.z64
+*.nds
+*.iso
+*.cue
+*.bin
+*.dump
+
+# Emulator runtime / save states (may contain ROM-derived content)
+*.sav
+*.srm
+*.rtc
+*.state
+*.savestate
+*.ss1
+*.ss2
+
+# Models and weights (live under D:\Ollama\models, not the repo)
+*.gguf
+*.onnx
+*.safetensors
+*.bin
+!docs/**/*.md
+
+# Runtime / generated data belongs in D:\Memnara-Data
+data/
+memory.db
+*.db
+*.sqlite
+*.sqlite3
+captures/
+screenshots/
+logs/
+audio/
+generated/
+cache/
+.tmp/
+tmp/
+temp/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editors
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Large local artifacts
+*.mp3
+*.wav
+*.ogg
+*.webm
+*.mp4
+*.png
+*.jpg
+*.jpeg
+!docs/research/fixtures/.gitkeep

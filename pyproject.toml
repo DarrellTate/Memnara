@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memnara"
+version = "0.1.0"
+description = "Local-only Memnara emulator harness, vision, fusion, and bounded autonomy (Milestone 5)"
+requires-python = ">=3.10"
+dependencies = [
+    "pyboy==2.7.0",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pillow>=10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+markers = [
+    "integration: live tests that require the operator ROM and/or local Ollama",
+]

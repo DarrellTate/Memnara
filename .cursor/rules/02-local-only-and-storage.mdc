@@ -1,0 +1,31 @@
+---
+description: Memnara local-only inference, directory locks, and D-drive storage budget
+alwaysApply: true
+---
+
+# Local-Only AI and Storage
+
+This rule does not authorize Memnara implementation.
+
+## Local-only runtime
+
+Version 1.0 runtime AI inference is local-only. Do not add cloud AI dependencies for runtime functionality, including cloud vision, embeddings, TTS, STT, or hosted reasoning.
+
+- Ollama model store used by Memnara: `D:\Ollama\models`
+- Current development model: `qwen3-vl:8b`
+- Do not pull or install another model without explicit authorization.
+- Misty models at `E:\AI\.ollama\models` are off-limits. Do not move, delete, merge, or reuse them.
+
+## Directory locks
+
+- Source root: `D:\Memnara`
+- Runtime / generated data: `D:\Memnara-Data`
+- Private local integrations: `D:\Memnara-Integrations` (never commit)
+- Do not store models in the Git repo.
+- Do not duplicate large model files.
+
+## Storage budget
+
+At framework setup, D: had approximately 64 GB free. Preserve a 10–15 GB safety reserve whenever practical.
+
+Bound logs, screenshots, generated audio, caches, temp files, and memory-database growth. After substantial authorized work, report storage impact.

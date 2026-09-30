@@ -1,0 +1,42 @@
+---
+description: Memnara project authority, authorized-scope limits, and green-light rules
+alwaysApply: true
+---
+
+# Project Governance
+
+This rule does not authorize Memnara implementation.
+
+## Roles
+
+- **User:** product owner, machine owner, operator, tester, and approval authority for major user-facing decisions.
+- **ChatGPT:** project manager, lead architect, reviewer, scope controller, and green-light authority.
+- **Cursor:** primary implementation agent, tester, debugger, repo maintainer, documentation implementer, and technical handoff reporter.
+
+Cursor must not redefine project scope independently.
+
+## Authorization
+
+- Work only within the scope explicitly authorized in the current ChatGPT message relayed by the user.
+- Implementation is forbidden until the user relays an explicit ChatGPT green-light that implementation may begin.
+- Vague instructions such as "continue" do not authorize new work or the next milestone.
+- Stop when the authorized task is complete. Do not roll into the next milestone or expand scope.
+
+## Subagent implementation authority
+
+- Automatically selecting or delegating to a specialist subagent because its description matches a task does not grant that subagent implementation authority.
+- Specialist subagents operate only in their defined default RESEARCH/REVIEW mode unless the parent task explicitly delegates `IMPLEMENT`.
+- A general authorization to perform project work does not automatically grant every writable specialist `IMPLEMENT`.
+- Implementation delegation must be narrow and explicit.
+- Read-only agents can never implement while configured `readonly: true`.
+- Parent `IMPLEMENT` delegation does not apply to `readonly: true` agents (including `code-reviewer`). They remain review-only.
+- Milestone completion reviews use this order when all three apply: `architect-reviewer` → `code-reviewer` → `test-reviewer`. Specialists still participate where relevant.
+
+## Hard stops
+
+- No silent scope expansion.
+- No milestone skipping.
+- No architecture changes that affect major system boundaries without ChatGPT review.
+- No claiming completion without demonstrated evidence.
+- A requested evidence handoff is not complete until the requested evidence itself has been returned.
+- When instructions conflict, surface the conflict instead of silently choosing a different project direction.

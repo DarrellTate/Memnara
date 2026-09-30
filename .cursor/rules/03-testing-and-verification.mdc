@@ -1,0 +1,29 @@
+---
+description: Memnara verification standards, no-fake-completion, and milestone evidence
+alwaysApply: true
+---
+
+# Testing and Verification
+
+This rule does not authorize Memnara implementation.
+
+## Verify before relying
+
+- Verify APIs, package names, and versions before depending on them.
+- Verify emulator functionality against the selected emulator after one is formally chosen.
+- Verify RAM addresses and structures against the actual target game and ROM version.
+- Never invent RAM mappings. Never invent package names or emulator capabilities.
+
+## Honesty labels
+
+Clearly distinguish **verified**, **mocked**, **inferred**, and **unverified** behavior.
+
+- Never fabricate test results.
+- Never report mocked behavior as live integration.
+- Never mark a milestone complete without demonstrated acceptance criteria.
+
+## Tests
+
+- Cover critical logic: config, parsers, actions, state machines, memory, control ownership, and save/reload.
+- Add regression tests after meaningful bug fixes when appropriate.
+- Prefer recorded fixtures so every test does not require live model inference.

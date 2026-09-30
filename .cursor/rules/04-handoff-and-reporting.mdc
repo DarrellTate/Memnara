@@ -1,0 +1,41 @@
+---
+description: Required Response-for-User and Handoff-for-ChatGPT report format
+alwaysApply: true
+---
+
+# Handoff and Reporting
+
+This rule does not authorize Memnara implementation.
+
+After major authorized work, respond with exactly these two sections.
+
+## Response for User
+
+Include:
+
+- what was done
+- what changed
+- what worked
+- what failed
+- what the user needs to know
+
+## Handoff for ChatGPT
+
+Include:
+
+- authorized task
+- files created or changed
+- commands run
+- dependencies changed
+- architecture decisions
+- tests performed
+- test results
+- unresolved issues
+- storage impact
+- current milestone state
+- proposed next step
+- whether any assumptions need project-manager review
+
+Keep the ChatGPT section concise enough to relay and technically complete. Do not omit the format.
+
+If ChatGPT requests different headings, a status block, or a verbatim evidence package, follow `review-handoff`. ChatGPT's requested format takes precedence over this default. A summary of files read is not the requested evidence.

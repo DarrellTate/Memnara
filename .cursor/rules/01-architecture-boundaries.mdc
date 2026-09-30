@@ -1,0 +1,37 @@
+---
+description: Memnara component boundaries, adapter isolation, and cross-game architecture
+alwaysApply: true
+---
+
+# Architecture Boundaries
+
+This rule does not authorize Memnara implementation.
+
+Preserve separation between these layers. Do not collapse them or create circular dependencies:
+
+- AI agent core
+- model providers
+- runtime backends (emulator adapters today; native PC capture/input later)
+- game adapters (optional per title)
+- vision / perception
+- RAM / state readers (optional; not required for generic play)
+- perception fusion
+- action / control
+- memory
+- personality / emotion
+- voice
+- conversation
+- manual-control ownership
+- UI
+- runtime / generated data
+
+## Required isolation
+
+- Title-specific logic stays in a local GameAdapter, never in the generic agent core.
+- Emulator-specific logic stays behind emulator abstractions. Native PC logic, when authorized, stays behind a native runtime abstraction. The core must not assume ROM, Game Boy, emulator, or RAM.
+- Runtimes advertise capabilities. The core must not infer capabilities from runtime type alone.
+- Model providers must remain replaceable. Do not couple the brain to one vendor or one model.
+- Vision and RAM remain labeled as separate sources. Fusion may combine them; it must not hide the source. RAM may be absent.
+- Runtime and generated data belong in `D:\Memnara-Data`, not in the source tree at `D:\Memnara`, unless explicitly appropriate.
+- Cross-game **and** cross-runtime architecture are first-class. New games add integrations; new platforms add backends. Neither rewrites the agent core.
+- VISION + INPUT is the minimum generic gameplay path in the long-term design. A RAM adapter is an enhancement, not a prerequisite.
