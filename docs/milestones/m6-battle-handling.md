@@ -115,7 +115,7 @@ Generic reasoning now says an exploration or encounter goal should prefer moveme
 
 ## Post-M6 movement outcome
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. The first post-M6 validation patch stays **COMPLETE / APPROVED**. This second patch is implemented and awaiting ChatGPT review. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. The first post-M6 validation patch stays **COMPLETE / APPROVED**. This second patch is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 A later hands-on run bumped into obstacles while the framebuffer changed from the walking or collision animation. The loop treated that as progress, so stuck recovery stayed at `NORMAL`.
 

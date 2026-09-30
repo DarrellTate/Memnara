@@ -2,7 +2,7 @@
 
 Local, multi-runtime AI gaming companion: observe, reason, control, remember, and comment across **emulator-backed** and **native PC** game runtimes. Persistent identity, vision, optional approved RAM, voice, conversation, and validated input. Not a hard-coded bot.
 
-**Current implementation:** PyBoy, optional local GameAdapter (private), M3 local VLM vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling. The first post-M6 validation patch is approved. The second post-M6 movement patch is awaiting ChatGPT review. Neither is a new milestone. SNES, PS1, DuckStation, and native Windows gameplay are **not** built.
+**Current implementation:** PyBoy, optional local GameAdapter (private), M3 local VLM vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling. The first post-M6 validation patch is approved. The second post-M6 movement patch is approved. Neither is a new milestone. SNES, PS1, DuckStation, and native Windows gameplay are **not** built.
 
 **First reference / testbed:** a locally supplied Game Boy title via PyBoy. Enhanced structured-state maps are private, not public core.
 

@@ -2,10 +2,10 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: post-M6 movement patch awaiting review
+CURRENT WORK: none
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
-POST-M6 PATCH #2: IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #2: COMPLETE / APPROVED
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -14,11 +14,11 @@ ADR-001–ADR-008: ACCEPTED
 ```text
 M0–M6 COMPLETE / APPROVED
 POST-M6 PATCH #1 COMPLETE / APPROVED
-POST-M6 PATCH #2 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #2 COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is implemented and awaiting ChatGPT review. Neither is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. Neither is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -152,7 +152,7 @@ Screen-level visual change was insufficient to determine navigation success.
 Repeated collision animations caused false progress and prevented stuck recovery.
 ```
 
-The second patch keeps `screen_changed` separate from a movement outcome (`MOVED`, `BLOCKED`, `UNCERTAIN`, `NOT_APPLICABLE`) derived from the before/after observations already collected. A clear scene shift is `MOVED`. An unchanged whole frame, or an equal structured navigation token, is `BLOCKED`. A stable border with a center-only change is `UNCERTAIN` and is not progress. Repeated uncertain attempts still feed the existing stuck detector. This patch is implemented and awaiting ChatGPT review. It does not add a map, pathfinding, or working memory.
+The second patch keeps `screen_changed` separate from a movement outcome (`MOVED`, `BLOCKED`, `UNCERTAIN`, `NOT_APPLICABLE`) derived from the before/after observations already collected. A clear scene shift is `MOVED`. An unchanged whole frame, or an equal structured navigation token, is `BLOCKED`. A stable border with a center-only change is `UNCERTAIN` and is not progress. Repeated uncertain attempts still feed the existing stuck detector. This patch is complete and approved. It does not add a map, pathfinding, or working memory.
 
 ## Open debts
 
