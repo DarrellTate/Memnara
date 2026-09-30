@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from hashlib import sha256
 
+from memnara.agent.movement import MovementOutcome, SceneSignature, frame_signature, read_navigation_token
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary, fuse
 
@@ -23,6 +24,8 @@ class ObservedState:
     screen_digest: str
     perception_ms: float
     summary: str
+    scene: SceneSignature | None = None
+    navigation_token: str | None = None
 
 
 def quoted_caption_text(description: str) -> str:
@@ -84,19 +87,29 @@ def _visual_description(context: PerceptionContext) -> str:
     return context.visual.description
 
 
-def meaningful_progress(before: ObservedState, after: ObservedState) -> bool:
+def meaningful_progress(
+    before: ObservedState,
+    after: ObservedState,
+    *,
+    movement: MovementOutcome,
+) -> bool:
     """Whether the step made gameplay progress.
 
     Flag, text, caption, and structured-token changes count even if the
-    framebuffer is unchanged. Free-form description wording counts only for
-    visual-only play (no progress token) and only together with a framebuffer
-    change. The same pixels rephrased by the model are not progress. A pixel
-    change with an unchanged description is not progress.
+    framebuffer is unchanged. Locomotion progress follows movement outcome:
+    MOVED counts, BLOCKED and UNCERTAIN do not. Free-form description wording
+    counts only for a non-movement action, and only together with a framebuffer
+    change and no progress token. The same pixels rephrased by the model are
+    not progress.
     """
     if semantic_visual_key(before.context) != semantic_visual_key(after.context):
         return True
     if (before.progress_token or "") != (after.progress_token or ""):
         return True
+    if movement is MovementOutcome.MOVED:
+        return True
+    if movement is MovementOutcome.BLOCKED or movement is MovementOutcome.UNCERTAIN:
+        return False
     if before.progress_token or after.progress_token:
         return False
     screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
@@ -147,5 +160,7 @@ class VisualOnlyObserver(PerceptionObserver):
             screen_digest=digest,
             perception_ms=elapsed,
             summary=compact_summary(context),
+            scene=frame_signature(frame.pixels, frame.width, frame.height, frame.pixel_format),
+            navigation_token=read_navigation_token(context),
         )
 

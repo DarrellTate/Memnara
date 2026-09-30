@@ -109,9 +109,22 @@ This is not a new milestone. M6 stays **COMPLETE / APPROVED**. The post-M6 hands
 
 `--show-window` passes PyBoy's in-process `"SDL2"` window to the one `PyBoyAdapter` shared by the observer and the executor. The default remains `"null"`. The flag does not start a second emulator and does not add a vision call.
 
-The first post-M6 run counted `progress=True` while `screen_changed=False` and `state_changed=False` because the public demo has no structured progress token. The visual-only fingerprint included the full model description, so a rephrased description of the same pixels changed the fingerprint. That wording is no longer progress. A description change counts on the visual-only path only when the framebuffer digest also changes. Dialogue text, menu flags, battle flags, and structured tokens still count without a pixel change.
+The first post-M6 run counted `progress=True` while `screen_changed=False` and `state_changed=False` because the public demo has no structured progress token. The visual-only fingerprint included the full model description, so a rephrased description of the same pixels changed the fingerprint. That wording is no longer progress. A description change counts on a non-movement action only when the framebuffer digest also changes. Locomotion uses the movement outcome described below. Dialogue text, menu flags, battle flags, and structured tokens still count without a pixel change.
 
 Generic reasoning now says an exploration or encounter goal should prefer movement, and should not choose `WAIT` only because standing still might cause a movement-triggered encounter. `WAIT` stays allowed when the screen shows a reason to wait. No title-specific encounter rule was added.
+
+## Post-M6 movement outcome
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. The first post-M6 validation patch stays **COMPLETE / APPROVED**. This second patch is implemented and awaiting ChatGPT review. M7 stays unauthorized.
+
+A later hands-on run bumped into obstacles while the framebuffer changed from the walking or collision animation. The loop treated that as progress, so stuck recovery stayed at `NORMAL`.
+
+```text
+Screen-level visual change was insufficient to determine navigation success.
+Repeated collision animations caused false progress and prevented stuck recovery.
+```
+
+`MovementOutcome` is `MOVED`, `BLOCKED`, `UNCERTAIN`, or `NOT_APPLICABLE`. It is derived from the before/after observations the loop already has. There is no extra vision call. A stable surrounding scene on a locomotion attempt is `BLOCKED` and is not progress. A clear scene shift is `MOVED`. Weak evidence is `UNCERTAIN` and is not treated as success. `PRESS_A`, `PRESS_B`, `PRESS_START`, `PRESS_SELECT`, and `WAIT` are `NOT_APPLICABLE`. Optional generic facts named `position_token`, `navigation_token`, or `location_token` can strengthen the result when both observations carry one. Dialogue, menu, battle, and structured progress tokens still count as progress on their own. Recent outcomes are appended to the existing bounded step history. The existing stuck states are unchanged. `--show-window` is unchanged. No map or pathfinding was added.
 
 ## Performance
 

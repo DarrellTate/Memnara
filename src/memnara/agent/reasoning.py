@@ -36,6 +36,7 @@ Rules:
 - If the scene looks like a menu or dialogue, PRESS_A or PRESS_B or WAIT may be more appropriate than walking.
 - If evidence shows a battle, you may still use generic buttons; you do not have battle strategy.
 - If the goal is to explore or move through terrain to trigger an encounter, prefer a movement action. Do not choose WAIT only because standing still might cause a movement-triggered encounter. WAIT remains valid when visible evidence shows waiting is useful, such as dialogue, a menu, or an animation that is still changing.
+- Recent steps report movement outcomes. MOVED means the attempted locomotion changed position. BLOCKED means the surrounding scene did not. If one direction repeatedly returns BLOCKED, prefer a different direction or another safe exploratory action. Do not treat a walking or bump animation as proof the move worked. UNCERTAIN means the evidence was too weak to decide.
 
 Return JSON matching the schema: action, optional parameters, reason, optional confidence (0-1).
 """

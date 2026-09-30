@@ -15,6 +15,7 @@ from memnara.agent.exceptions import (
 )
 from memnara.agent.execute import ActionExecutor, ExecutionResult
 from memnara.agent.history import RecentStep, StepHistory
+from memnara.agent.movement import MovementOutcome, classify_movement
 from memnara.agent.observe import PerceptionObserver, meaningful_progress
 from memnara.agent.ownership import ControlGate
 from memnara.agent.reasoning import ReasoningProvider
@@ -166,9 +167,20 @@ class AgentLoop:
                                 consecutive_failures += 1
                                 after = before
 
-            # Flags, text, caption, and optional token. Description wording counts
-            # only when the framebuffer also changed and no structured token exists.
-            progress = meaningful_progress(before, after)
+            # Uses the two observations this step already collected. No extra vision call.
+            # A failed re-observe keeps the same object, so there is no after-frame to judge.
+            if executed and after is before and proposal is not None and proposal.action.startswith("MOVE_"):
+                movement = MovementOutcome.UNCERTAIN
+            else:
+                movement = classify_movement(
+                    action=proposal.action if proposal else None,
+                    executed=executed,
+                    navigation_before=before.navigation_token,
+                    navigation_after=after.navigation_token,
+                    scene_before=before.scene,
+                    scene_after=after.scene,
+                )
+            progress = meaningful_progress(before, after, movement=movement)
             screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
             state_changed = after.progress_token != before.progress_token
             stuck_state = self.stuck.update(
@@ -192,6 +204,7 @@ class AgentLoop:
                     state_changed=state_changed,
                     stuck_state=stuck_state.value,
                     progress=progress,
+                    movement_outcome=movement.value,
                     error=error,
                     perception_ms=before.perception_ms,
                     reasoning_ms=reasoning_ms,
@@ -238,8 +251,11 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
         f"CONFIDENCE {conf_text}\n"
         f"RESULT\n"
         f"validated={step.validation_ok} executed={step.executed} execution_ok={step.execution_ok}\n"
-        f"screen_changed={step.screen_changed} state_changed={step.state_changed} "
-        f"progress={step.progress} stuck_state={step.stuck_state}\n"
+        f"screen_changed={step.screen_changed}\n"
+        f"state_changed={step.state_changed}\n"
+        f"movement={step.movement_outcome}\n"
+        f"progress={step.progress}\n"
+        f"stuck_state={step.stuck_state}\n"
         f"error={step.error or 'none'}\n"
         f"timings_ms perception={step.perception_ms} reasoning={step.reasoning_ms} "
         f"execution={step.execution_ms} total={step.total_ms}"

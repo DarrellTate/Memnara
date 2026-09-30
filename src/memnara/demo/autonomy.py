@@ -87,6 +87,7 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "after_perception_summary": step.after_summary,
         "screen_changed": step.screen_changed,
         "state_changed": step.state_changed,
+        "movement_outcome": step.movement_outcome,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {

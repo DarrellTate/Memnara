@@ -527,6 +527,7 @@ def test_reobserve_failure_is_recorded() -> None:
     assert result.steps[0].executed is True
     assert "PerceptionFailedError" in result.steps[0].error
     assert result.steps[0].progress is False
+    assert result.steps[0].movement_outcome == "UNCERTAIN"
 
 
 TOKEN = "map=38:x=1:y=2:mode=OVERWORLD:battle=False"

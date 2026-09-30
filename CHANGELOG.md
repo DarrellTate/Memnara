@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Post-M6 movement-outcome patch, implemented and awaiting ChatGPT review. Locomotion steps record `MOVED`, `BLOCKED`, `UNCERTAIN`, or `NOT_APPLICABLE` from the observations already collected. A collision animation that leaves the surrounding scene in place is not progress. Recent outcomes stay in bounded history. Not a new milestone. M7 remains unauthorized.
 - Post-M6 hands-on validation improvement **COMPLETE / APPROVED**. `--show-window` displays the same in-process PyBoy instance the loop controls. Unchanged-frame description rephrasing is no longer progress. Encounter goals prefer movement over waiting with no visible reason. Not a new milestone. M7 remains unauthorized.
 - M6 generic battle handling **COMPLETE / APPROVED**. Interaction mode is derived from labeled perception. Ownership still blocks input. A stale mode drops one proposal. No new actions. Live battle proof remains deferred and accepted.
 - Project renamed from GameAI to Memnara before the first public Memnara release.

@@ -111,7 +111,7 @@ NORMAL → SUSPECTED_STUCK → CHANGE_STRATEGY → EXPLORE → INTERVENTION_REQU
 
 Signals:
 
-* unchanged **meaningful-progress fingerprint** (semantic visual flags + `visible_text` when present + optional structured `progress_token`; when a dialogue/menu is active and `visible_text` is empty, quoted/caption text from the description is used). Free-form description wording is not itself progress. On the visual-only path it counts only together with a framebuffer change.
+* unchanged **meaningful-progress fingerprint** (semantic visual flags + `visible_text` when present + optional structured `progress_token`; when a dialogue/menu is active and `visible_text` is empty, quoted/caption text from the description is used). Free-form description wording is not itself progress. On a non-movement action it counts only together with a framebuffer change. A locomotion result of `BLOCKED` or `UNCERTAIN` is not progress.
 * repeated identical action without meaningful progress.
 
 `screen_changed` is recorded separately from the raw framebuffer digest and does **not** by itself reset stuck detection.

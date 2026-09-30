@@ -2,9 +2,10 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: none
+CURRENT WORK: post-M6 movement patch awaiting review
 MILESTONE 6: COMPLETE / APPROVED
-POST-M6 VALIDATION PATCH: COMPLETE / APPROVED
+POST-M6 PATCH #1: COMPLETE / APPROVED
+POST-M6 PATCH #2: IMPLEMENTED / AWAITING CHATGPT REVIEW
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -12,11 +13,12 @@ ADR-001–ADR-008: ACCEPTED
 
 ```text
 M0–M6 COMPLETE / APPROVED
-POST-M6 VALIDATION PATCH COMPLETE / APPROVED
+POST-M6 PATCH #1 COMPLETE / APPROVED
+POST-M6 PATCH #2 IMPLEMENTED / AWAITING CHATGPT REVIEW
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The post-M6 hands-on validation patch is complete and approved. It is not a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is implemented and awaiting ChatGPT review. Neither is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -141,7 +143,16 @@ The operator opened one emulator and Memnara started another. Those were differe
 
 After the post-M6 validation patch, `--show-window` shows the PyBoy window of the same in-process instance Memnara controls. The historical finding stands: before that flag, the operator could not watch the controlled instance. Default runs stay headless.
 
-Progress awareness: that `progress=True` result was a bug. With no structured token, the visual-only fingerprint included the model's free-form description, so rephrasing an unchanged framebuffer counted as progress. The patch no longer treats that wording change as progress. Spatial scene understanding remains product-quality debt. This patch does not add mapping, pathfinding, or working memory.
+Progress awareness: that `progress=True` result was a bug. With no structured token, the visual-only fingerprint included the model's free-form description, so rephrasing an unchanged framebuffer counted as progress. The first patch no longer treats that wording change as progress. Spatial scene understanding remains product-quality debt. That patch does not add mapping, pathfinding, or working memory.
+
+A later hands-on run showed a second failure. Directional movement bumped into obstacles. The framebuffer changed because of the walking or collision animation, and the loop recorded `screen_changed=True` with `progress=True` and `stuck_state=NORMAL`.
+
+```text
+Screen-level visual change was insufficient to determine navigation success.
+Repeated collision animations caused false progress and prevented stuck recovery.
+```
+
+The second patch keeps `screen_changed` separate from a movement outcome (`MOVED`, `BLOCKED`, `UNCERTAIN`, `NOT_APPLICABLE`) derived from the before/after observations already collected. A stable surrounding scene is not treated as a successful move. This patch is implemented and awaiting ChatGPT review. It does not add a map, pathfinding, or working memory.
 
 ## Open debts
 
@@ -160,3 +171,4 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 10. Record `confirm_execution` exceptions on the step instead of aborting the loop.
 11. Review battle-view fields that are derived and not read by the loop.
 12. Spatial visual understanding is weak. Mapping, pathfinding, and navigation memory are out of scope until a later authorization.
+13. Visual movement classification can treat a short step that stays inside the actor window, with a stable surrounding scene, as BLOCKED. Unstructured scene changes stay UNCERTAIN. No map was added.

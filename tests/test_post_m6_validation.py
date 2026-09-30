@@ -34,7 +34,13 @@ def _visual(**overrides) -> VisualObservation:
     return VisualObservation(**data)
 
 
-def _state(*, digest: str = "aaa", token: str | None = None, **visual_kw) -> ObservedState:
+def _state(
+    *,
+    digest: str = "aaa",
+    token: str | None = None,
+    navigation_token: str | None = None,
+    **visual_kw,
+) -> ObservedState:
     context = fuse(visual=_visual(**visual_kw))
     return ObservedState(
         context=context,
@@ -43,6 +49,7 @@ def _state(*, digest: str = "aaa", token: str | None = None, **visual_kw) -> Obs
         screen_digest=digest,
         perception_ms=1.0,
         summary=compact_summary(context),
+        navigation_token=navigation_token,
     )
 
 
@@ -141,6 +148,7 @@ def test_framebuffer_change_with_new_description_can_be_progress() -> None:
     step = _step(
         _state(digest="before", description="A closed room."),
         _state(digest="after", description="An open path to the north."),
+        action="PRESS_A",
     )
     assert step.screen_changed is True
     assert step.progress is True
@@ -229,8 +237,8 @@ def test_repeated_unchanged_movement_can_escalate_stuck() -> None:
 
 
 def test_meaningful_progress_resets_stuck_after_blocked_movement() -> None:
-    blocked = _state(digest="wall", description="A wall.")
-    moved = _state(digest="moved", description="A new opening.")
+    blocked = _state(digest="wall", description="A wall.", navigation_token="same-place")
+    moved = _state(digest="moved", description="A new opening.", navigation_token="next-place")
     states = [blocked, blocked, blocked, blocked, blocked, blocked, blocked, moved]
     detector = StuckDetector(StuckConfig(unchanged_limit=2, same_action_limit=99, max_recovery_attempts=8))
     loop = AgentLoop(
