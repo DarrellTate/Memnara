@@ -2,11 +2,11 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: Post-M6 Patch #3 awaiting ChatGPT review
+CURRENT WORK: none
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
-POST-M6 PATCH #3: IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #3: COMPLETE / APPROVED
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -16,11 +16,11 @@ ADR-001–ADR-008: ACCEPTED
 M0–M6 COMPLETE / APPROVED
 POST-M6 PATCH #1 COMPLETE / APPROVED
 POST-M6 PATCH #2 COMPLETE / APPROVED
-POST-M6 PATCH #3 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #3 COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is implemented and awaiting ChatGPT review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -165,7 +165,7 @@ A battle-entry fade reached INTERVENTION_REQUIRED before the battle scene stabil
 
 The same run showed the controlled emulator lagging while the model was thinking, including during fades where no gameplay input was required. Traced in the public loop: a frame advances only inside `GameBoyActionExecutor.execute` (button delay plus settle ticks, or `WAIT` ticks). `observe` and `propose` do not tick, so the in-process PyBoy stays frozen for the whole vision and reasoning call.
 
-Post-M6 Patch #3 is implemented and awaiting review. It does not replace the scorecards above. A near-black or near-uniform frame is `TRANSIENT`. A dark scene that still has structure stays `STABLE`. Black is not treated as a battle. While the scene stays transient, and Memnara has gameplay ownership, the same emulator advances a bounded number of frames with no button held, then one vision call runs on the resulting frame. The default budget is 120 frames, re-checked every 8. A stable frame clears that budget. After it is spent, the existing stuck detector runs again. A proposal other than `WAIT` is not executed on a frame that is still transient. Those advanced frames are not `MOVE`, `PRESS`, or `WAIT`. A scene-wide change after a move is `UNCERTAIN`, not `MOVED`. `--show-window` still shows that same instance, and passive ticks render it.
+Post-M6 Patch #3 is complete and approved. It does not replace the scorecards above. A near-black or near-uniform frame is `TRANSIENT`. A dark scene that still has structure stays `STABLE`. Black is not treated as a battle. While the scene stays transient, and Memnara has gameplay ownership, the same emulator advances a bounded number of frames with no button held, then one vision call runs on the resulting frame. The default budget is 120 frames, re-checked every 8. A stable frame clears that budget. After it is spent, the existing stuck detector runs again. A proposal other than `WAIT` is not executed on a frame that is still transient. Those advanced frames are not `MOVE`, `PRESS`, or `WAIT`. A scene-wide change after a move is `UNCERTAIN`, not `MOVED`. `--show-window` still shows that same instance, and passive ticks render it.
 
 ## Open debts
 
@@ -185,3 +185,4 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 11. Review battle-view fields that are derived and not read by the loop.
 12. Spatial visual understanding is weak. Mapping, pathfinding, and navigation memory are out of scope until a later authorization.
 13. A fixed-camera step that stays inside the central window is `UNCERTAIN`. It is not called `BLOCKED`, and it is not called a successful move, until a scene shift or a structured navigation token is available. No map was added.
+14. Transition near-black and near-uniform thresholds, and the 120-frame / 8-frame grace budget, are accepted implementation-level tuning for future runtimes. They are not a blocker and do not authorize a loading-screen system.

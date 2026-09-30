@@ -128,7 +128,7 @@ Repeated collision animations caused false progress and prevented stuck recovery
 
 ## Post-M6 transition-state recovery
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #1 and Patch #2 stay **COMPLETE / APPROVED**. This third patch is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #1 and Patch #2 stay **COMPLETE / APPROVED**. This third patch is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 ```text
 Temporary scene-transition frames caused false stuck escalation.
@@ -154,6 +154,8 @@ A runtime that cannot peek, passively advance, and observe an already captured f
 CLI lines are `SCENE STABILITY` and, in the result, `transition`, `transition_grace_remaining`, and `passive_frames`. Evidence JSON adds `scene_stability`, `transition_state`, `transition_grace_remaining`, and `passive_frames`. `--show-window` is unchanged: passive ticks use `render=True` on that same adapter.
 
 Synthetic measurement, not a live model run: eight button-free frames, two tick calls, one vision call, one reasoning call, zero button presses. Wall clock was about 0.051s, of which 0.050s was a single reasoning stub sleep. No live speedup number is claimed. The M5 cadence remains the hands-on baseline.
+
+Accepted at approval. The near-black and near-uniform thresholds, and the 120-frame grace budget checked every 8 frames, may be tuned for a future runtime. That tuning is not a blocker and does not authorize a general loading-screen system.
 
 ## Performance
 
