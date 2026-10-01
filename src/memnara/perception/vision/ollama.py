@@ -32,6 +32,8 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 DEFAULT_TIMEOUT_S = 120.0
 DEFAULT_MODEL = "qwen3-vl:8b"
+# Longer than Ollama's 5-minute default so a hands-on pause does not reload the model.
+DEFAULT_KEEP_ALIVE = "30m"
 
 
 def assert_local_endpoint(endpoint: str) -> str:
@@ -57,6 +59,7 @@ class OllamaVisionProvider(VisionProvider):
         scale: int = DEFAULT_SCALE,
         timeout_s: float = DEFAULT_TIMEOUT_S,
         think: bool = False,
+        keep_alive: str = DEFAULT_KEEP_ALIVE,
         http_get=None,
         http_post=None,
     ) -> None:
@@ -65,6 +68,7 @@ class OllamaVisionProvider(VisionProvider):
         self.scale = scale
         self.timeout_s = timeout_s
         self.think = think
+        self.keep_alive = keep_alive
         self._http_get = http_get or self._get_json
         self._http_post = http_post or self._post_json
         self._model_checked = False
@@ -77,6 +81,7 @@ class OllamaVisionProvider(VisionProvider):
             "model": self.model,
             "stream": False,
             "think": self.think,
+            "keep_alive": self.keep_alive,
             "format": OBSERVATION_FORMAT,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},

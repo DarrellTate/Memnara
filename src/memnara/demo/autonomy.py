@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the PyBoy window of the same instance Memnara controls",
     )
     parser.add_argument(
+        "--timing-details",
+        action="store_true",
+        help="Print per-step perception reuse and timing on the developer CLI",
+    )
+    parser.add_argument(
         "--evidence",
         type=Path,
         default=None,
@@ -88,6 +93,8 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "screen_changed": step.screen_changed,
         "state_changed": step.state_changed,
         "movement_outcome": step.movement_outcome,
+        "interaction_outcome": step.interaction_outcome,
+        "perception_reused": step.perception_reused,
         "scene_stability": step.scene_stability,
         "transition_state": step.transition_state,
         "transition_grace_remaining": step.transition_grace_remaining,
@@ -96,8 +103,10 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "error": step.error,
         "timings": {
             "perception_ms": step.perception_ms,
+            "vision_ms": step.vision_ms,
             "reasoning_ms": step.reasoning_ms,
             "execution_ms": step.execution_ms,
+            "confirmation_ms": step.confirmation_ms,
             "total_ms": step.total_ms,
         },
     }
@@ -169,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         records = []
         for item in result.steps:
             records.append(step_record(item, previous_mode=previous_mode))
-            print(format_step(item, previous_mode=previous_mode))
+            print(format_step(item, previous_mode=previous_mode, timing_details=args.timing_details))
             print("-" * 40)
             previous_mode = item.interaction_mode
         evidence["steps"] = records

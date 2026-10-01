@@ -707,7 +707,8 @@ def test_visual_only_description_change_on_same_frame_is_not_progress() -> None:
     assert step.before_fingerprint == step.after_fingerprint
 
 
-def test_dialogue_caption_change_without_visible_text_is_progress() -> None:
+def test_dialogue_caption_rephrase_on_the_same_frame_is_not_progress() -> None:
+    """Same pixels, flags, and visible text. A rephrased quote is not advancement."""
     observer = SequenceObserver(
         [
             _observed(
@@ -726,10 +727,15 @@ def test_dialogue_caption_change_without_visible_text_is_progress() -> None:
             ),
         ]
     )
-    step = _loop(observer=observer, max_steps=1).run().steps[0]
+    step = _loop(
+        observer=observer,
+        reasoner=ScriptedReasoner([{"action": "PRESS_B", "reason": "advance text"}]),
+        max_steps=1,
+    ).run().steps[0]
     assert step.screen_changed is False
     assert step.state_changed is False
-    assert step.progress is True
+    assert step.progress is False
+    assert step.interaction_outcome == "NO_EFFECT"
 
 
 def test_overworld_description_jitter_is_not_progress() -> None:

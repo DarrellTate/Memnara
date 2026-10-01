@@ -157,6 +157,16 @@ Synthetic measurement, not a live model run: eight button-free frames, two tick 
 
 Accepted at approval. The near-black and near-uniform thresholds, and the 120-frame grace budget checked every 8 frames, may be tuned for a future runtime. That tuning is not a blocker and does not authorize a general loading-screen system.
 
+## Post-M6 interaction outcome
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #4 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+
+`InteractionOutcome` is separate from `MovementOutcome`. A `MOVE_*` action is `NOT_APPLICABLE` for interaction. A `PRESS_*` or `WAIT` action is `NOT_APPLICABLE` for movement. `ADVANCED` means the menu, dialogue, or battle flags, the visible text, or the structured token changed. `CHANGED` means the framebuffer changed without that. `NO_EFFECT` means a stable non-movement action left those fields and the framebuffer the same. A transient side is `UNCERTAIN`.
+
+`NO_EFFECT` is not meaningful progress. The recent-step line reads `PRESS_B → NO_EFFECT`. The reasoning prompt tells the model to use those observed outcomes and not to invent a button meaning from another game. Repeated `NO_EFFECT` on the same action feeds the existing stuck detector. A later `ADVANCED` step resets it. There is no stored control map.
+
+A stable framebuffer whose digest matches the previous stable reading reuses that vision result. A different digest, a transient frame, or an empty digest calls the vision model. The reasoner still runs on a stable step. `--timing-details` prints vision, perception, reasoning, execution, confirmation, and total milliseconds. The default CLI prints `interaction=` only.
+
 ## Performance
 
 No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step. Post-M6 Patch #3 does not add a vision call per pumped transition frame.

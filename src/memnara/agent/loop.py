@@ -15,6 +15,7 @@ from memnara.agent.exceptions import (
 )
 from memnara.agent.execute import ActionExecutor, ExecutionResult
 from memnara.agent.history import RecentStep, StepHistory
+from memnara.agent.interaction import InteractionOutcome, classify_interaction
 from memnara.agent.movement import MovementOutcome, classify_movement
 from memnara.agent.observe import ObservedState, PerceptionObserver, meaningful_progress
 from memnara.agent.ownership import ControlGate
@@ -213,7 +214,22 @@ class AgentLoop:
                                     after_acq = None
 
             movement = self._movement(proposal, executed, before, after, after_acq)
-            progress = meaningful_progress(before, after, movement=movement)
+            unconfirmed = executed and after is before
+            # A fade that has already settled is classified from the stable frame.
+            # Movement still treats the pumped gap as UNCERTAIN.
+            transient = (
+                unconfirmed
+                or before.scene_stability == SceneStability.TRANSIENT.value
+                or after.scene_stability == SceneStability.TRANSIENT.value
+            )
+            interaction = classify_interaction(
+                action=proposal.action if proposal else None,
+                executed=executed,
+                before=before,
+                after=after,
+                transient=transient,
+            )
+            progress = meaningful_progress(before, after, movement=movement, interaction=interaction)
             screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
             state_changed = after.progress_token != before.progress_token
             skip_stuck = before_acq.suppressed or error.startswith("StaleSceneError")
@@ -248,6 +264,10 @@ class AgentLoop:
                     stuck_state=stuck_state.value,
                     progress=progress,
                     movement_outcome=movement.value,
+                    interaction_outcome=interaction.value,
+                    perception_reused=before.perception_reused,
+                    confirmation_ms=after.perception_ms if after_acq is not None else None,
+                    vision_ms=before.vision_ms,
                     error=error,
                     perception_ms=before.perception_ms,
                     reasoning_ms=reasoning_ms,
@@ -316,6 +336,10 @@ class AgentLoop:
             self._grace_used = 0
         elif stability is SceneStability.TRANSIENT:
             saw = True
+        if saw:
+            invalidate = getattr(self.observer, "invalidate_perception_reuse", None)
+            if callable(invalidate):
+                invalidate()
         state = self.observer.observe_frame(frame)
         return _Acquisition(
             state=state,
@@ -391,7 +415,7 @@ class AgentLoop:
         )
 
 
-def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
+def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_details: bool = False) -> str:
     action = step.proposal.action if step.proposal else "NONE"
     reason = step.proposal.reason if step.proposal else ""
     confidence = step.proposal.confidence if step.proposal else None
@@ -399,6 +423,14 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
     label = mode_label(step.interaction_mode)
     transition = mode_transition(previous_mode, step.interaction_mode)
     transition_line = f"\nTRANSITION {transition}" if transition else ""
+    timing_line = ""
+    if timing_details:
+        timing_line = (
+            f"\nTIMING reused={step.perception_reused} "
+            f"vision_ms={step.vision_ms} perception_ms={step.perception_ms} "
+            f"reasoning_ms={step.reasoning_ms} execution_ms={step.execution_ms} "
+            f"confirmation_ms={step.confirmation_ms} total_ms={step.total_ms}"
+        )
     return (
         f"STEP {step.step}\n"
         f"MODE {label}{transition_line}\n"
@@ -412,6 +444,7 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
         f"screen_changed={step.screen_changed}\n"
         f"state_changed={step.state_changed}\n"
         f"movement={step.movement_outcome}\n"
+        f"interaction={step.interaction_outcome}\n"
         f"transition={step.transition_state}\n"
         f"transition_grace_remaining={step.transition_grace_remaining}\n"
         f"passive_frames={step.passive_frames}\n"
@@ -419,5 +452,5 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None) -> str:
         f"stuck_state={step.stuck_state}\n"
         f"error={step.error or 'none'}\n"
         f"timings_ms perception={step.perception_ms} reasoning={step.reasoning_ms} "
-        f"execution={step.execution_ms} total={step.total_ms}"
+        f"execution={step.execution_ms} total={step.total_ms}{timing_line}"
     )

@@ -383,7 +383,7 @@ def test_black_frame_does_not_select_exploratory_movement() -> None:
     loop, runtime, vision, reasoner, executor = _wired(frames, grace=8, chunk=1, max_steps=1)
     result = loop.run()
     assert runtime.presses == []
-    assert vision.indices == [2, 2]
+    assert vision.indices == [2]
     assert result.steps[0].passive_frames == 2
     assert result.steps[0].scene_stability == "STABLE"
     assert result.steps[0].proposal.action == "MOVE_RIGHT"
@@ -647,8 +647,7 @@ def test_battle_activates_only_after_the_stable_scene() -> None:
     step = result.steps[0]
     assert step.interaction_mode == "BATTLE_ACTIVE"
     assert step.scene_stability == "STABLE"
-    assert vision.indices == [2] or vision.indices[0] == 2
-    assert all(index == 2 for index in vision.indices)
+    assert vision.indices == [2]
     assert runtime.presses == []
     assert reasoner.calls == 1
     assert derive_battle_view(reasoner.contexts[0]).mode is InteractionMode.BATTLE_ACTIVE
@@ -746,7 +745,8 @@ def test_ordinary_stable_gameplay_still_uses_the_decision_loop() -> None:
     assert all(step.passive_frames == 0 for step in result.steps)
     assert all(step.transition_state == "STABLE" for step in result.steps)
     assert runtime.presses == []
-    assert vision.calls == 4
+    assert vision.calls == 3
+    assert result.steps[1].perception_reused is True
     assert executor.actions == ["MOVE_RIGHT", "MOVE_RIGHT"]
 
 

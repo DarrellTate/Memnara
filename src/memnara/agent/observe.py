@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from memnara.agent.movement import MovementOutcome, SceneSignature, frame_signature, read_navigation_token
-from memnara.agent.transition import frame_stability
+from memnara.agent.transition import SceneStability, frame_stability
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary, fuse
 
@@ -28,6 +28,8 @@ class ObservedState:
     scene: SceneSignature | None = None
     navigation_token: str | None = None
     scene_stability: str = "STABLE"
+    perception_reused: bool = False
+    vision_ms: float = 0.0
 
 
 def quoted_caption_text(description: str) -> str:
@@ -89,30 +91,38 @@ def _visual_description(context: PerceptionContext) -> str:
     return context.visual.description
 
 
+def _stable_interaction_changed(before: ObservedState, after: ObservedState) -> bool:
+    """Menu, dialogue, battle, visible text, or structured token. Not caption wording."""
+    from memnara.agent.interaction import interaction_signature
+
+    return interaction_signature(before) != interaction_signature(after)
+
+
 def meaningful_progress(
     before: ObservedState,
     after: ObservedState,
     *,
     movement: MovementOutcome,
+    interaction=None,
 ) -> bool:
     """Whether the step made gameplay progress.
 
-    Flag, text, caption, and structured-token changes count even if the
-    framebuffer is unchanged. Locomotion progress follows movement outcome:
-    MOVED counts, BLOCKED and UNCERTAIN do not. Free-form description wording
-    counts only for a non-movement action, and only together with a framebuffer
-    change and no progress token. The same pixels rephrased by the model are
-    not progress.
+    Menu, dialogue, and battle flags, visible text, and a structured token
+    count even if the framebuffer is unchanged. A quoted caption or scene-type
+    label that changes while those fields and the framebuffer stay the same
+    does not. Locomotion progress follows movement outcome: MOVED counts,
+    BLOCKED and UNCERTAIN do not. A non-movement NO_EFFECT does not. Free-form
+    description wording counts only together with a framebuffer change.
     """
-    if semantic_visual_key(before.context) != semantic_visual_key(after.context):
-        return True
-    if (before.progress_token or "") != (after.progress_token or ""):
+    from memnara.agent.interaction import InteractionOutcome
+
+    if _stable_interaction_changed(before, after):
         return True
     if movement is MovementOutcome.MOVED:
         return True
     if movement is MovementOutcome.BLOCKED or movement is MovementOutcome.UNCERTAIN:
         return False
-    if before.progress_token or after.progress_token:
+    if interaction is InteractionOutcome.NO_EFFECT:
         return False
     screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
     if not screen_changed:
@@ -146,6 +156,8 @@ class VisualOnlyObserver(PerceptionObserver):
     def __init__(self, emulator, vision) -> None:
         self._emulator = emulator
         self._vision = vision
+        self._reuse_digest: str | None = None
+        self._reuse_visual = None
 
     def observe(self) -> ObservedState:
         return self.observe_frame(self.peek_frame())
@@ -166,15 +178,43 @@ class VisualOnlyObserver(PerceptionObserver):
         frame = self.peek_frame()
         return frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format).value
 
+    def invalidate_perception_reuse(self) -> None:
+        """Drop a cached reading after a fade. The next stable frame is read again."""
+        self._reuse_visual = None
+        self._reuse_digest = None
+
     def observe_frame(self, frame) -> ObservedState:
-        """Run one vision call on a frame the caller already captured."""
+        """Run one vision call, or reuse the last stable reading of these exact pixels.
+
+        Reuse is exact-digest only, and only while both readings are STABLE.
+        A different framebuffer, including a fade or a menu change, calls the
+        vision model again.
+        """
         started = time.perf_counter()
-        visual = self._vision.observe(frame)
-        context = fuse(visual=visual)
         digest = digest_pixels(frame.pixels)
+        stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
+        reused = False
+        vision_started = time.perf_counter()
+        if (
+            stability is SceneStability.STABLE
+            and self._reuse_visual is not None
+            and digest
+            and digest == self._reuse_digest
+        ):
+            visual = self._reuse_visual
+            reused = True
+        else:
+            visual = self._vision.observe(frame)
+            if stability is SceneStability.STABLE and digest:
+                self._reuse_visual = visual
+                self._reuse_digest = digest
+            else:
+                self._reuse_visual = None
+                self._reuse_digest = None
+        vision_ms = 0.0 if reused else (time.perf_counter() - vision_started) * 1000
+        context = fuse(visual=visual)
         fingerprint = fingerprint_context(context, None)
         elapsed = (time.perf_counter() - started) * 1000
-        stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
         return ObservedState(
             context=context,
             fingerprint=fingerprint,
@@ -185,5 +225,7 @@ class VisualOnlyObserver(PerceptionObserver):
             scene=frame_signature(frame.pixels, frame.width, frame.height, frame.pixel_format),
             navigation_token=read_navigation_token(context),
             scene_stability=stability.value,
+            perception_reused=reused,
+            vision_ms=vision_ms,
         )
 

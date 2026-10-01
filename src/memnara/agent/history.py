@@ -33,6 +33,10 @@ class RecentStep:
     transition_state: str = "STABLE"
     transition_grace_remaining: int = 0
     passive_frames: int = 0
+    interaction_outcome: str = "NOT_APPLICABLE"
+    perception_reused: bool = False
+    confirmation_ms: float | None = None
+    vision_ms: float | None = None
 
 
 class StepHistory:
@@ -53,5 +57,8 @@ class StepHistory:
         lines: list[str] = []
         for item in self._items[-limit:]:
             action = item.proposal.action if item.proposal else "NONE"
-            lines.append(f"{action} → {item.movement_outcome}")
+            outcome = item.movement_outcome
+            if outcome == "NOT_APPLICABLE" and item.interaction_outcome != "NOT_APPLICABLE":
+                outcome = item.interaction_outcome
+            lines.append(f"{action} → {outcome}")
         return tuple(lines)

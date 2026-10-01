@@ -17,6 +17,7 @@ from memnara.perception.context import PerceptionContext
 from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUnavailableError
 from memnara.perception.vision.ollama import (
     DEFAULT_ENDPOINT,
+    DEFAULT_KEEP_ALIVE,
     DEFAULT_MODEL,
     assert_local_endpoint,
 )
@@ -30,12 +31,14 @@ class OllamaReasoningProvider(ReasoningProvider):
         model: str = DEFAULT_MODEL,
         timeout_s: float = 120.0,
         think: bool = False,
+        keep_alive: str = DEFAULT_KEEP_ALIVE,
         http_post=None,
     ) -> None:
         self.endpoint = assert_local_endpoint(endpoint)
         self.model = model
         self.timeout_s = timeout_s
         self.think = think
+        self.keep_alive = keep_alive
         self._http_post = http_post or self._post_json
 
     def propose(
@@ -62,6 +65,7 @@ class OllamaReasoningProvider(ReasoningProvider):
             "model": self.model,
             "stream": False,
             "think": self.think,
+            "keep_alive": self.keep_alive,
             "format": PROPOSAL_FORMAT,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
