@@ -159,13 +159,25 @@ Accepted at approval. The near-black and near-uniform thresholds, and the 120-fr
 
 ## Post-M6 interaction outcome
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #4 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #4 is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 `InteractionOutcome` is separate from `MovementOutcome`. A `MOVE_*` action is `NOT_APPLICABLE` for interaction. A `PRESS_*` or `WAIT` action is `NOT_APPLICABLE` for movement. `ADVANCED` means the menu, dialogue, or battle flags, the visible text, or the structured token changed. `CHANGED` means the framebuffer changed without that. `NO_EFFECT` means a stable non-movement action left those fields and the framebuffer the same. A transient side is `UNCERTAIN`.
 
 `NO_EFFECT` is not meaningful progress. The recent-step line reads `PRESS_B → NO_EFFECT`. The reasoning prompt tells the model to use those observed outcomes and not to invent a button meaning from another game. Repeated `NO_EFFECT` on the same action feeds the existing stuck detector. A later `ADVANCED` step resets it. There is no stored control map.
 
 A stable framebuffer whose digest matches the previous stable reading reuses that vision result. A different digest, a transient frame, or an empty digest calls the vision model. The reasoner still runs on a stable step. `--timing-details` prints vision, perception, reasoning, execution, confirmation, and total milliseconds. The default CLI prints `interaction=` only.
+
+## Post-M6 runtime cadence
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #5 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+
+`DecisionReadiness` is `INPUT_REQUIRED`, `PASSIVE_PROGRESS`, or `UNKNOWN`. It is not `SceneStability`. A near-black or near-uniform frame is still a transition. A structured frame that keeps changing with no button held can be passive progress: battle motion, text reveal, or a camera shift are examples of the kind of motion, and none of those layouts is encoded.
+
+The pump runs only when Memnara has `AI_CONTROL`, the run is not a dry run, and the observer can peek, advance, and observe a frame. That is the frame-stepping capability. A runtime without those methods keeps the normal loop. There is no background thread. The budget is 180 frames, re-checked every 8, with a 5-second hang guard. Each check is a pixel comparison. One vision call runs when the episode stops. The reasoner runs on that frame, including when the budget ends while the picture is still changing.
+
+`PAUSED`, `USER_CONTROL`, and `CONVERSATION` do not take those ticks. Before execute, a peek that no longer matches the reasoned framebuffer drops the proposal (`StaleObservationError`). Patch #4 reuse still applies to an unchanged stable frame and still misses when the pixels differ. A fade still clears the cache.
+
+The default CLI adds `readiness=`. `--timing-details` adds model-wait time, passive-runtime time, progression frames, and emulated-frame throughput. That throughput is emulated frames per wall-clock second, not a display refresh rate.
 
 ## Performance
 

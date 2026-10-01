@@ -225,7 +225,7 @@ def _near_black(visual: VisualObservation | None = None) -> Frame:
     return _frame(_solid(W, H, 4), visual or _visual(description="A nearly dark frame."))
 
 
-def _loop(observer, *, reasoner=None, executor=None, owner=ControlOwner.AI_CONTROL, grace=8, chunk=1, max_steps=1, dry_run=False, stuck=None, max_consecutive_failures=5):
+def _loop(observer, *, reasoner=None, executor=None, owner=ControlOwner.AI_CONTROL, grace=8, chunk=1, max_steps=1, dry_run=False, stuck=None, max_consecutive_failures=5, passive_budget_frames=0):
     return AgentLoop(
         observer=observer,
         reasoner=reasoner or ChooseReasoner(),
@@ -238,6 +238,7 @@ def _loop(observer, *, reasoner=None, executor=None, owner=ControlOwner.AI_CONTR
         dry_run=dry_run,
         transition_grace_frames=grace,
         transition_chunk_frames=chunk,
+        passive_budget_frames=passive_budget_frames,
     )
 
 

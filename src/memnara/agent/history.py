@@ -37,6 +37,11 @@ class RecentStep:
     perception_reused: bool = False
     confirmation_ms: float | None = None
     vision_ms: float | None = None
+    decision_readiness: str = "UNKNOWN"
+    progression_frames: int = 0
+    progression_chunks: int = 0
+    passive_runtime_ms: float | None = None
+    model_wait_ms: float | None = None
 
 
 class StepHistory:

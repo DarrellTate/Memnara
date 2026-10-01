@@ -2,12 +2,13 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: Post-M6 Patch #4 implemented, awaiting ChatGPT review
+CURRENT WORK: Post-M6 Patch #5 implemented, awaiting ChatGPT review
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
 POST-M6 PATCH #3: COMPLETE / APPROVED
-POST-M6 PATCH #4: IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #4: COMPLETE / APPROVED
+POST-M6 PATCH #5: IMPLEMENTED / AWAITING CHATGPT REVIEW
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -18,11 +19,12 @@ M0–M6 COMPLETE / APPROVED
 POST-M6 PATCH #1 COMPLETE / APPROVED
 POST-M6 PATCH #2 COMPLETE / APPROVED
 POST-M6 PATCH #3 COMPLETE / APPROVED
-POST-M6 PATCH #4 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #4 COMPLETE / APPROVED
+POST-M6 PATCH #5 IMPLEMENTED / AWAITING CHATGPT REVIEW
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -183,6 +185,19 @@ That finding does not replace the scorecards above. An unchanged stable menu pre
 
 A stable framebuffer that matches the previous stable reading reuses that vision result. A different framebuffer calls the vision model again. Reasoning still runs on a stable step, because another safe action may still be available. `--timing-details` prints the per-step split. The default CLI adds `interaction=` and does not print the timing split.
 
+```text
+POST-M6 HANDS-ON FINDING
+
+The visible emulator still advanced in chunks after model-call optimization.
+
+Root cause:
+the PyBoy runtime remains frozen during normal perception and reasoning and only advances during executor/runtime tick paths.
+
+Patch #3 improved transient scenes only; stable automatic animation remained coupled to the AI decision loop.
+```
+
+That finding does not replace the scorecards above. `DecisionReadiness` is separate from scene stability. A stable frame whose pixels keep changing with no button held is `PASSIVE_PROGRESS`. The same runtime then advances in bounded chunks, comparing framebuffers and not calling the vision model per frame. When the picture settles, readiness is `INPUT_REQUIRED` and the normal decision runs once. A frame that is still changing when the budget ends is still shown to the reasoner. `PAUSED`, `USER_CONTROL`, `CONVERSATION`, and dry-run do not take those ticks. If the live frame changes after a proposal and before execute, the proposal is dropped. `--timing-details` adds model-wait time, passive-runtime time, progression frames, and emulated-frame throughput. A decision that still needs a model can take several seconds. This patch does not make gameplay real-time.
+
 ## Open debts
 
 1. Coordinate/facing movement not experimentally proven (M2 private integration).
@@ -203,3 +218,4 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 13. A fixed-camera step that stays inside the central window is `UNCERTAIN`. It is not called `BLOCKED`, and it is not called a successful move, until a scene shift or a structured navigation token is available. No map was added.
 14. Transition near-black and near-uniform thresholds, and the 120-frame / 8-frame grace budget, are accepted implementation-level tuning for future runtimes. They are not a blocker and do not authorize a loading-screen system.
 15. The visual fingerprint still includes the free-form caption and scene type. A rephrased quote on an unchanged frame is `NO_EFFECT` and is not progress. The unchanged-fingerprint stuck counter may not see that rephrase. The same-action counter still escalates a repeated no-effect press.
+16. Passive progression uses a pixel-change threshold and a 180-frame / 8-frame budget with a 5-second hang guard. Motion under the threshold does not keep the clock running. Motion above it can consume the budget before the next decision, including a small repeating animation on an otherwise actionable scene. That tuning is not a second stuck detector and does not authorize a background emulator thread.

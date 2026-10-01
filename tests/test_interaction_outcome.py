@@ -408,6 +408,7 @@ def test_same_pixels_after_a_transition_are_not_reused() -> None:
         max_steps=1,
         transition_grace_frames=8,
         transition_chunk_frames=1,
+        passive_budget_frames=0,
     ).run()
     step = result.steps[0]
     assert vision.calls == 2

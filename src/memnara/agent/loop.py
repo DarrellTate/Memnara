@@ -17,8 +17,16 @@ from memnara.agent.execute import ActionExecutor, ExecutionResult
 from memnara.agent.history import RecentStep, StepHistory
 from memnara.agent.interaction import InteractionOutcome, classify_interaction
 from memnara.agent.movement import MovementOutcome, classify_movement
-from memnara.agent.observe import ObservedState, PerceptionObserver, meaningful_progress
+from memnara.agent.observe import ObservedState, PerceptionObserver, digest_pixels, meaningful_progress
 from memnara.agent.ownership import ControlGate
+from memnara.agent.readiness import (
+    DEFAULT_PASSIVE_BUDGET_FRAMES,
+    DEFAULT_PASSIVE_CHUNK_FRAMES,
+    DEFAULT_PASSIVE_WALL_S,
+    PASSIVE_GUIDANCE,
+    DecisionReadiness,
+    frames_meaningfully_changed,
+)
 from memnara.agent.reasoning import ReasoningProvider
 from memnara.agent.stuck import StuckDetector, StuckState
 from memnara.agent.transition import (
@@ -48,6 +56,10 @@ class _Acquisition:
     saw_transition: bool
     grace_remaining: int
     suppressed: bool
+    decision_readiness: str = "UNKNOWN"
+    progression_frames: int = 0
+    progression_chunks: int = 0
+    passive_runtime_ms: float = 0.0
 
 
 class AgentLoop:
@@ -67,6 +79,9 @@ class AgentLoop:
         goal: str = "Explore and make progress through the game.",
         transition_grace_frames: int = DEFAULT_TRANSITION_GRACE_FRAMES,
         transition_chunk_frames: int = DEFAULT_TRANSITION_CHUNK_FRAMES,
+        passive_budget_frames: int = DEFAULT_PASSIVE_BUDGET_FRAMES,
+        passive_chunk_frames: int = DEFAULT_PASSIVE_CHUNK_FRAMES,
+        passive_wall_s: float = DEFAULT_PASSIVE_WALL_S,
     ) -> None:
         if max_steps < 1:
             raise ValueError("max_steps must be >= 1")
@@ -76,6 +91,12 @@ class AgentLoop:
             raise ValueError("transition_grace_frames must be >= 1")
         if transition_chunk_frames < 1:
             raise ValueError("transition_chunk_frames must be >= 1")
+        if passive_budget_frames < 0:
+            raise ValueError("passive_budget_frames must be >= 0")
+        if passive_chunk_frames < 1:
+            raise ValueError("passive_chunk_frames must be >= 1")
+        if passive_wall_s <= 0:
+            raise ValueError("passive_wall_s must be > 0")
         self.observer = observer
         self.reasoner = reasoner
         self.validator = validator
@@ -89,6 +110,9 @@ class AgentLoop:
         self.goal = goal
         self.transition_grace_frames = transition_grace_frames
         self.transition_chunk_frames = transition_chunk_frames
+        self.passive_budget_frames = passive_budget_frames
+        self.passive_chunk_frames = passive_chunk_frames
+        self.passive_wall_s = passive_wall_s
         self._grace_used = 0
 
     def run(self) -> LoopResult:
@@ -116,6 +140,8 @@ class AgentLoop:
                 history_lines = self.history.action_lines()
                 if before.scene_stability == SceneStability.TRANSIENT.value:
                     history_lines = (TRANSITION_GUIDANCE,) + history_lines
+                elif before_acq.progression_frames > 0:
+                    history_lines = (PASSIVE_GUIDANCE,) + history_lines
                 reason_started = time.perf_counter()
                 try:
                     proposal = self.reasoner.propose(
@@ -178,6 +204,10 @@ class AgentLoop:
                             error = (
                                 "StaleSceneError: reasoned=STABLE confirmed=TRANSIENT"
                             )
+                        elif self._observation_diverged(before):
+                            error = (
+                                "StaleObservationError: the frame changed after it was reasoned on"
+                            )
                         elif self.dry_run:
                             # execution_ok True means the no-execution policy completed, not that input occurred.
                             execution_ok = True
@@ -232,7 +262,9 @@ class AgentLoop:
             progress = meaningful_progress(before, after, movement=movement, interaction=interaction)
             screen_changed = bool(after.screen_digest) and after.screen_digest != before.screen_digest
             state_changed = after.progress_token != before.progress_token
-            skip_stuck = before_acq.suppressed or error.startswith("StaleSceneError")
+            skip_stuck = before_acq.suppressed or error.startswith(
+                ("StaleSceneError", "StaleObservationError")
+            )
             if skip_stuck:
                 stuck_state = self.stuck.state
                 if before_acq.suppressed:
@@ -245,9 +277,21 @@ class AgentLoop:
                 )
             saw = before_acq.saw_transition or (after_acq.saw_transition if after_acq else False)
             passive = before_acq.passive_frames + (after_acq.passive_frames if after_acq else 0)
+            progression = before_acq.progression_frames + (
+                after_acq.progression_frames if after_acq else 0
+            )
+            progression_chunks = before_acq.progression_chunks + (
+                after_acq.progression_chunks if after_acq else 0
+            )
+            passive_runtime_ms = before_acq.passive_runtime_ms + (
+                after_acq.passive_runtime_ms if after_acq else 0
+            )
             grace_remaining = after_acq.grace_remaining if after_acq else before_acq.grace_remaining
             transition_state = SceneStability.TRANSIENT.value if saw else SceneStability.STABLE.value
             total_ms = (time.perf_counter() - started) * 1000
+            model_wait_ms = before.vision_ms + (reasoning_ms or 0.0)
+            if after_acq is not None:
+                model_wait_ms += after.vision_ms
             self.history.append(
                 RecentStep(
                     step=index,
@@ -278,6 +322,11 @@ class AgentLoop:
                     transition_state=transition_state,
                     transition_grace_remaining=grace_remaining,
                     passive_frames=passive,
+                    decision_readiness=before_acq.decision_readiness,
+                    progression_frames=progression,
+                    progression_chunks=progression_chunks,
+                    passive_runtime_ms=passive_runtime_ms,
+                    model_wait_ms=model_wait_ms,
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -310,28 +359,32 @@ class AgentLoop:
         return self._acquire_fallback(self.observer.observe())
 
     def _acquire_steppable(self) -> _Acquisition:
-        """Pump button-free frames while the scene is transient, then one vision call.
+        """Advance button-free frames, then one vision call.
 
-        Tick calls here are runtime progression. They are not MOVE, PRESS, or WAIT.
+        A fade uses the transition budget. A stable frame that keeps changing
+        on its own uses the passive-progression budget. Neither path is a
+        MOVE, PRESS, or WAIT, and neither calls the vision model per frame.
         """
         frame = self.observer.peek_frame()
         stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
         passive = 0
         saw = stability is SceneStability.TRANSIENT
-        if saw and self._can_pump() and self._grace_used < self.transition_grace_frames:
-            while stability is SceneStability.TRANSIENT and self._grace_used < self.transition_grace_frames:
-                chunk = min(
-                    self.transition_chunk_frames,
-                    self.transition_grace_frames - self._grace_used,
-                )
-                if chunk < 1:
-                    break
-                frame = self.observer.passive_advance(chunk)
-                self._grace_used += chunk
-                passive += chunk
-                stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
-                if stability is SceneStability.TRANSIENT:
-                    saw = True
+        if saw:
+            frame, stability, pumped = self._pump_transient(frame, stability)
+            passive += pumped
+        progression_frames = 0
+        progression_chunks = 0
+        passive_runtime_ms = 0.0
+        readiness = DecisionReadiness.UNKNOWN.value
+        if stability is SceneStability.STABLE:
+            frame, stability, readiness, progressed, chunks, runtime_ms = self._advance_passive(frame)
+            progression_frames += progressed
+            progression_chunks += chunks
+            passive_runtime_ms += runtime_ms
+            if stability is SceneStability.TRANSIENT:
+                saw = True
+                frame, stability, pumped = self._pump_transient(frame, stability)
+                passive += pumped
         if stability is SceneStability.STABLE:
             self._grace_used = 0
         elif stability is SceneStability.TRANSIENT:
@@ -347,7 +400,66 @@ class AgentLoop:
             saw_transition=saw,
             grace_remaining=max(0, self.transition_grace_frames - self._grace_used),
             suppressed=False,
+            decision_readiness=readiness,
+            progression_frames=progression_frames,
+            progression_chunks=progression_chunks,
+            passive_runtime_ms=passive_runtime_ms,
         )
+
+    def _pump_transient(self, frame, stability):
+        """Button-free ticks while the frame stays near-black or near-uniform."""
+        passive = 0
+        if self._can_pump() and self._grace_used < self.transition_grace_frames:
+            while stability is SceneStability.TRANSIENT and self._grace_used < self.transition_grace_frames:
+                chunk = min(
+                    self.transition_chunk_frames,
+                    self.transition_grace_frames - self._grace_used,
+                )
+                if chunk < 1:
+                    break
+                frame = self.observer.passive_advance(chunk)
+                self._grace_used += chunk
+                passive += chunk
+                stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
+        return frame, stability, passive
+
+    def _advance_passive(self, frame):
+        """Tick while a stable framebuffer keeps changing with no button held.
+
+        The first unchanged chunk stops the episode. A transient chunk is handed
+        back to the fade pump. Budget and wall-clock both stop the loop, and the
+        caller then takes one vision reading.
+        """
+        started = time.perf_counter()
+        if self.passive_budget_frames < 1 or not self._can_pump():
+            elapsed = (time.perf_counter() - started) * 1000
+            return frame, SceneStability.STABLE, DecisionReadiness.UNKNOWN.value, 0, 0, elapsed
+        used = 0
+        episode = 0
+        chunks = 0
+        readiness = DecisionReadiness.INPUT_REQUIRED.value
+        stability = SceneStability.STABLE
+        current = frame
+        while used < self.passive_budget_frames and (time.perf_counter() - started) < self.passive_wall_s:
+            step = min(self.passive_chunk_frames, self.passive_budget_frames - used)
+            if step < 1:
+                break
+            nxt = self.observer.passive_advance(step)
+            used += step
+            stability = frame_stability(nxt.pixels, nxt.width, nxt.height, nxt.pixel_format)
+            changed = frames_meaningfully_changed(current, nxt)
+            current = nxt
+            if stability is SceneStability.TRANSIENT:
+                readiness = DecisionReadiness.UNKNOWN.value
+                break
+            if not changed:
+                readiness = DecisionReadiness.INPUT_REQUIRED.value
+                break
+            episode += step
+            chunks += 1
+            readiness = DecisionReadiness.PASSIVE_PROGRESS.value
+        elapsed = (time.perf_counter() - started) * 1000 if episode else 0.0
+        return current, stability, readiness, episode, chunks, elapsed
 
     def _acquire_fallback(self, state: ObservedState) -> _Acquisition:
         """Observers that cannot advance frames still get a bounded grace.
@@ -388,7 +500,29 @@ class AgentLoop:
         probe = getattr(self.observer, "probe_stability", None)
         if not callable(probe):
             return False
-        return probe() == SceneStability.TRANSIENT.value
+        try:
+            return probe() == SceneStability.TRANSIENT.value
+        except Exception:
+            return False
+
+    def _observation_diverged(self, before: ObservedState) -> bool:
+        """True when the live framebuffer no longer matches the reasoned frame.
+
+        Peek does not tick. A match means the proposal still targets this frame.
+        A peek that raises, or a frame with no pixels, is treated as diverged.
+        Runtimes without peek_frame stay on the normal execute path.
+        """
+        peek = getattr(self.observer, "peek_frame", None)
+        if not callable(peek) or not before.screen_digest:
+            return False
+        try:
+            frame = peek()
+        except Exception:
+            return True
+        digest = digest_pixels(frame.pixels)
+        if not digest:
+            return True
+        return digest != before.screen_digest
 
     def _confirm_execution(self, prior: ObservedState) -> ObservedState:
         confirm = getattr(self.observer, "confirm_execution", None)
@@ -425,12 +559,20 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
     transition_line = f"\nTRANSITION {transition}" if transition else ""
     timing_line = ""
     if timing_details:
+        throughput = ""
+        runtime_ms = step.passive_runtime_ms or 0.0
+        advanced = step.passive_frames + step.progression_frames
+        if runtime_ms > 0 and advanced:
+            throughput = f" emulated_fps={advanced / (runtime_ms / 1000):.1f}"
         timing_line = (
-            f"\nTIMING reused={step.perception_reused} "
-            f"vision_ms={step.vision_ms} perception_ms={step.perception_ms} "
-            f"reasoning_ms={step.reasoning_ms} execution_ms={step.execution_ms} "
-            f"confirmation_ms={step.confirmation_ms} total_ms={step.total_ms}"
-        )
+                f"\nTIMING reused={step.perception_reused} "
+                f"vision_ms={step.vision_ms} perception_ms={step.perception_ms} "
+                f"reasoning_ms={step.reasoning_ms} execution_ms={step.execution_ms} "
+                f"confirmation_ms={step.confirmation_ms} total_ms={step.total_ms} "
+                f"model_wait_ms={step.model_wait_ms} passive_runtime_ms={step.passive_runtime_ms} "
+                f"progression_frames={step.progression_frames} "
+                f"progression_chunks={step.progression_chunks}{throughput}"
+            )
     return (
         f"STEP {step.step}\n"
         f"MODE {label}{transition_line}\n"
@@ -445,6 +587,7 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
         f"state_changed={step.state_changed}\n"
         f"movement={step.movement_outcome}\n"
         f"interaction={step.interaction_outcome}\n"
+        f"readiness={step.decision_readiness}\n"
         f"transition={step.transition_state}\n"
         f"transition_grace_remaining={step.transition_grace_remaining}\n"
         f"passive_frames={step.passive_frames}\n"

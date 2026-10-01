@@ -99,6 +99,9 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "transition_state": step.transition_state,
         "transition_grace_remaining": step.transition_grace_remaining,
         "passive_frames": step.passive_frames,
+        "decision_readiness": step.decision_readiness,
+        "progression_frames": step.progression_frames,
+        "progression_chunks": step.progression_chunks,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {
@@ -107,6 +110,8 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
             "reasoning_ms": step.reasoning_ms,
             "execution_ms": step.execution_ms,
             "confirmation_ms": step.confirmation_ms,
+            "model_wait_ms": step.model_wait_ms,
+            "passive_runtime_ms": step.passive_runtime_ms,
             "total_ms": step.total_ms,
         },
     }
