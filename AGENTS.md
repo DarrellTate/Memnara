@@ -1,6 +1,6 @@
 # Agents
 
-Memnara is a local multi-runtime companion (see [ADR-007](docs/adr/ADR-007-multi-runtime.md) and [ARCHITECTURE.md](ARCHITECTURE.md)). **Current public code** is PyBoy + generic VISION + INPUT + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling, including the approved post-M6 observability patch and the approved movement-outcome patch. Enhanced structured-state maps live in private local integrations, not in this repository.
+Memnara is a local multi-runtime companion (see [ADR-007](docs/adr/ADR-007-multi-runtime.md) and [ARCHITECTURE.md](ARCHITECTURE.md)). **Current public code** is PyBoy + generic VISION + INPUT + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling, including the approved post-M6 patches through continuous runtime (Patch #6). Enhanced structured-state maps live in private local integrations, not in this repository.
 
 ## Roles
 

@@ -30,9 +30,10 @@ from memnara.runtime.exceptions import (
     RuntimeTimeoutError,
 )
 
-# ADR-007 capability names. CONTINUOUS is a proposed addition to that catalog:
-# the runtime advances the game without the agent asking for frames. It is
-# flagged for project-manager review rather than treated as accepted.
+# ADR-007 capability names. CONTINUOUS is not in that catalog. ChatGPT left it
+# as a later architecture decision: continuous progression may be a runtime
+# scheduling/property concern rather than a capability equivalent to
+# FRAME_STEPPING, INPUT, or VISION. Do not treat it as accepted ADR-007.
 CAPABILITY_VISION = "VISION"
 CAPABILITY_INPUT = "INPUT"
 CAPABILITY_FRAME_STEPPING = "FRAME_STEPPING"

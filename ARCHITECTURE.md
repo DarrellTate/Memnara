@@ -35,7 +35,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#6. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#5 are **COMPLETE / APPROVED**. Patch #6 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. None is a new milestone. M7 is not authorized.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#6. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#6 are **COMPLETE / APPROVED**. None is a new milestone. M7 is not authorized.
 
 ## Runtime families (design)
 
@@ -45,7 +45,7 @@ Generic execution behind a future `GameRuntime` (today: `EmulatorAdapter` + PyBo
 
 ### Continuous runtime
 
-A runtime that advertises **CONTINUOUS** advances the game on its own clock instead of only when a decision asks for frames. `ContinuousRuntime` is the generic surface: start, stop, latest snapshot, wait for frames, submit one command. `ThreadedEmulatorRuntime` implements it for any `EmulatorAdapter` by giving one owner thread exclusive rights to every emulator call, which keeps a single-threaded vendor emulator safe while a local model thinks on another thread. A native PC runtime that already runs continuously will satisfy the same surface without a thread of Memnara's own. The name is not tied to PyBoy.
+A continuous runtime advances the game on its own clock instead of only when a decision asks for frames. `ContinuousRuntime` is the generic surface: start, stop, latest snapshot, wait for frames, submit one command. `ThreadedEmulatorRuntime` implements it for any `EmulatorAdapter` by giving one owner thread exclusive rights to every emulator call, which keeps a single-threaded vendor emulator safe while a local model thinks on another thread. A native PC runtime that already runs continuously will satisfy the same surface without a thread of Memnara's own. The name is not tied to PyBoy. `CONTINUOUS` is not an ADR-007 capability; whether continuous progression belongs in that catalog, or is only a runtime scheduling property, is a later architecture decision. ADR-007 was not amended for Patch #6.
 
 The owner thread publishes immutable `RuntimeSnapshot` values carrying an observation id, a framebuffer copy, a digest, a runtime frame counter, and a timestamp. Perception and reasoning read snapshots and never mutate the runtime. The agent submits at most one `ActionCommand`, carrying the action, parameters, and the observation it was reasoned from, through a one-slot queue; a second pending action is refused rather than buffered. Every advanced frame is paced toward a target cadence so input application does not outrun normal game time.
 

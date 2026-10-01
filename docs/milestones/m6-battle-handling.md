@@ -181,7 +181,7 @@ The default CLI adds `readiness=`. `--timing-details` adds model-wait time, pass
 
 ## Post-M6 continuous runtime
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #6 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #6 is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 ```text
 POST-M6 HANDS-ON FINDING

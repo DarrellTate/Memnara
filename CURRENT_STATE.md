@@ -2,14 +2,14 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: Post-M6 Patch #6 implemented, awaiting ChatGPT review
+CURRENT WORK: none
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
 POST-M6 PATCH #3: COMPLETE / APPROVED
 POST-M6 PATCH #4: COMPLETE / APPROVED
 POST-M6 PATCH #5: COMPLETE / APPROVED
-POST-M6 PATCH #6: IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #6: COMPLETE / APPROVED
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -22,11 +22,11 @@ POST-M6 PATCH #2 COMPLETE / APPROVED
 POST-M6 PATCH #3 COMPLETE / APPROVED
 POST-M6 PATCH #4 COMPLETE / APPROVED
 POST-M6 PATCH #5 COMPLETE / APPROVED
-POST-M6 PATCH #6 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #6 COMPLETE / APPROVED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is complete and approved. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -242,7 +242,7 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 19. Exact-digest perception reuse hits less often while the runtime keeps moving, because a live scene changes pixels. Per-observation model-call counts are unchanged, and no extra call per step was added.
 20. The continuous runtime paces frames with sleeps because the PyBoy adapter runs unthrottled. Cadence is approximate, not frame-locked, and a loaded machine falls behind the target rather than catching up.
 21. `from memnara.config import ...` as the first import in a process hits a pre-existing package import cycle through `memnara.perception`. Importing `memnara.agent` first avoids it. This predates Patch #6 and is not fixed here.
-22. `CONTINUOUS` is used as a capability name and is not in the ADR-007 catalog. It needs project-manager review before it is treated as accepted.
+22. `CONTINUOUS` is used in code as a capability-like name and is not in the ADR-007 catalog. ChatGPT left this non-blocking: do not amend ADR-007 for Patch #6. Continuous progression may be a runtime scheduling/property concern rather than a capability equivalent to FRAME_STEPPING, INPUT, or VISION. That is a later architecture decision.
 23. The owner thread repeats the ownership check before moving a button, but it cannot judge semantic freshness. Semantic validation stays on the agent side, before submit.
 24. `stale_proposals_dropped` is a run-long running total, so it climbs across steps rather than reporting one step. The evidence key is named `stale_proposals_dropped_total` and the CLI field matches.
 25. `RuntimeActionExecutor.release_all` is a no-op, because input release belongs to the owner thread inside the command. The agent loop's own release in its `finally` therefore does nothing in continuous mode. Release still happens, on runtime shutdown and on a failed command.
