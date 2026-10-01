@@ -254,7 +254,7 @@ Live PyBoy with a visible SDL2 window: every call on the owner thread, at least 
 
 ## Post-M6 thinking profiles
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #7 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #7 is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 ```text
 POST-M6 HANDS-ON FINDING
@@ -267,7 +267,7 @@ Product direction:
 support configurable thinking depth so users can choose faster responses or more deliberate decisions without changing AI identity.
 ```
 
-`--thinking fast|balanced|deliberate` maps onto one `ThinkingSettings` object. Default is balanced. FAST shortens the reasoner system prompt, bounds `num_predict`, asks for a short visual description, and may reuse perception across idle animation. All profiles keep the same action JSON schema, ownership, stale-proposal checks, and Patch #4/`NO_EFFECT` history. `--timing-details` now prints acquire, freshness, post-acquire, classification, and unaccounted milliseconds so a step's wall clock can be reconstructed. `confirmation_ms` remains the post-action observation time for evidence compatibility.
+`--thinking fast|balanced|deliberate` maps onto one `ThinkingSettings` object. Default remains balanced until operator testing determines whether FAST should become a future consumer default. FAST shortens the reasoner system prompt, bounds `num_predict`, asks for a short visual description, and may reuse perception across idle animation. All profiles keep the same action JSON schema, ownership, stale-proposal checks, and Patch #4/`NO_EFFECT` history. `--timing-details` now prints acquire, freshness, post-acquire, classification, and unaccounted milliseconds so a step's wall clock can be reconstructed. `confirmation_ms` remains the post-action observation time for evidence compatibility.
 
 ## Performance
 

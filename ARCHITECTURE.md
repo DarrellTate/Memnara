@@ -36,7 +36,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#7. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#6 are **COMPLETE / APPROVED**. Patch #7 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. None is a new milestone. M7 is not authorized.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#7. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#7 are **COMPLETE / APPROVED**. Planned and unauthorized before M7: Patch #8 perception/latency, an ephemeral affect prototype, and an asynchronous voice spike. None is a new milestone. M7 is not authorized.
 
 ## Runtime families (design)
 
@@ -241,7 +241,7 @@ Profiles are independent of runtime, game, emulator, model, and voice. Example: 
 
 ## Thinking depth
 
-Thinking depth is an execution/configuration concern, not AI identity. `ThinkingSettings` presets (`fast`, `balanced`, `deliberate`) bound history windows, vision/reasoner generation, description length, and perception-reuse strictness. The future M10 UI can expose a Thinking selector next to Model. Switching Balanced → Fast does not create a different AI, change the model, or alter voice/runtime/controls. Default for this patch is `balanced`. Providers consume numeric/text budgets and should not branch on UI names.
+Thinking depth is an execution/configuration concern, not AI identity. `ThinkingSettings` presets (`fast`, `balanced`, `deliberate`) bound history windows, vision/reasoner generation, description length, and perception-reuse strictness. The future M10 UI can expose a Thinking selector next to Model. Switching Balanced → Fast does not create a different AI, change the model, or alter voice/runtime/controls. Default for this patch is `balanced`. Providers consume numeric/text budgets and should not branch on UI names. Naming debt (`ThinkingProfile` vs AI Profile) is non-blocking.
 
 ## Commentary / experience (future)
 
@@ -310,7 +310,7 @@ Memnara does **not** set or depend on `OLLAMA_MODELS` as an application/runtime 
 
 ## Future UI (not implemented)
 
-**M10** (desktop PySide6 shell, ADR-006) should eventually select: Runtime Type, Platform, Runtime/Emulator, Game/ROM/Window, AI Profile, Model, Voice, Control Preset, plus input mapping. Display **detected capabilities**. Model list from local Ollama discovery, not a hard-coded menu. Examples: Emulator / platform / backend / window title. No UI in this documentation correction.
+**M10** (desktop PySide6 shell, ADR-006) should eventually select: Runtime Type, Platform, Runtime/Emulator, Game/ROM/Window, AI Profile, Model, Thinking, Voice, Control Preset, Knowledge, plus input mapping. Display **detected capabilities**. Model list from local Ollama discovery, not a hard-coded menu. Examples: Emulator / platform / backend / window title. No UI in this documentation correction. Experimental CLI flags must not be hard-coded into UI-specific code; reuse config surfaces.
 
 ## Data model (logical)
 

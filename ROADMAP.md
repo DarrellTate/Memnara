@@ -37,7 +37,10 @@ POST-M6 PATCH #3 COMPLETE / APPROVED
 POST-M6 PATCH #4 COMPLETE / APPROVED
 POST-M6 PATCH #5 COMPLETE / APPROVED
 POST-M6 PATCH #6 COMPLETE / APPROVED
-POST-M6 PATCH #7 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #7 COMPLETE / APPROVED
+POST-M6 PATCH #8 PLANNED
+POST-M6 AFFECT PROTOTYPE PLANNED
+POST-M6 VOICE SPIKE PLANNED
 M7 AUTHORIZED NO
 ```
 
@@ -52,13 +55,16 @@ M7 AUTHORIZED NO
 - **Post-M6 interaction patch** records whether a non-movement action advanced, changed, or had no effect, and skips a repeat vision call when the stable framebuffer is unchanged. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
 - **Post-M6 cadence patch** lets a frame-stepping runtime advance while a stable picture keeps changing on its own, and asks the model again when that motion settles. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
 - **Post-M6 continuous-runtime patch** keeps one owner thread advancing and rendering the emulator while perception and reasoning run on the agent thread, and drops a proposal that is no longer aimed at an equivalent scene. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
-- **Post-M6 thinking-profile patch** accounts for full decision wall time and exposes FAST/BALANCED/DELIBERATE latency-depth presets without changing AI identity. **IMPLEMENTED / AWAITING CHATGPT REVIEW.** Not a numbered milestone. M7 remains unauthorized.
+- **Post-M6 thinking-profile patch** accounts for full decision wall time and exposes FAST/BALANCED/DELIBERATE latency-depth presets without changing AI identity. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
+- **Post-M6 Patch #8 (planned)** perception efficiency and remaining decision-latency cleanup: shorter actionable visual descriptions, especially FAST visual generation, and safer post-action perception cost. Preserve Patch #6 continuous runtime and Patch #7 timing accounting. Do not switch models merely for benchmark numbers. **Not authorized.**
+- **Post-M6 affect prototype (planned)** ephemeral, session-local, event-driven affect plus a gated text reaction. Deterministic from existing outcomes; not M9; not persistent attachment. Keep REASON and REACTION separate. **Not authorized.**
+- **Post-M6 voice spike (planned)** asynchronous speech of gated reactions through a replaceable speech adapter/queue. Must not pause the game, own the runtime clock, or block vision/reasoning/action. Not M11; not AI identity. Follows affect prototype review. **Not authorized.**
 - **M7** profile-aware persistent + session memory foundation. Requirements include: `ai_profile_id` ownership (never model ownership); session/working memory distinct from long-term store; SQLite schema; memory types/scopes; timestamps; model provenance (`model_id_at_creation` is metadata only); lineage (`source_memory_ids` / `source_game_ids`); CRUD primitives; bulk filtering/reset primitives. See [ADR-008](docs/adr/ADR-008-ai-memory-knowledge-architecture.md) (**ACCEPTED**). **Not authorized.**
 - **M8** memory compression / retrieval / consolidation. Requirements include: short-term → long-term consolidation; SQLite FTS5 retrieval; bounded top-K retrieval; importance / recency / scope filters; derived-memory lineage/reconciliation. **Not authorized.**
 - **M8A** Game Knowledge Packs + local RAG. Game-scoped document packs (TXT / Markdown / PDF initially), activate/deactivate, document enable/disable, category/provenance metadata, bounded local retrieval, knowledge policies (BLIND / LORE / MANUAL / GUIDED / FULL). Packs belong to game/session configuration, not to an AI profile. Do not merge pack chunks into personal memory. **Not authorized.**
-- **M9** AI profile / personality / affect system.
-- **M10** desktop **PySide6** shell (ADR-006). Conceptual selectors: Runtime Type, Platform, Runtime/Emulator, Game/ROM/Window, AI Profile, Model, Voice, Control Preset, plus input mapping. Model list from Ollama discovery, not a hard-coded menu. **Also** Memory Manager and Knowledge Manager: search/filter, create/edit/delete, bulk operations, per-game reset, per-run reset, date-range filtering/reset, model-provenance filtering/reset, blind-new-run workflow. **Not implemented now.**
-- **M11** local voice system.
+- **M9** AI profile / personality / affect system. Pre-M7 affect, if authorized, stays ephemeral and event-driven so M9 can later add profile-aware, history-aware, persistent tendencies without rewriting the agent core. **Not authorized.**
+- **M10** desktop **PySide6** shell (ADR-006). Conceptual selectors: Runtime Type, Platform, Runtime/Emulator, Game/ROM/Window, AI Profile, Model, Thinking, Voice, Control Preset, Knowledge, plus input mapping. Model list from Ollama discovery, not a hard-coded menu. **Also** Memory Manager and Knowledge Manager: search/filter, create/edit/delete, bulk operations, per-game reset, per-run reset, date-range filtering/reset, model-provenance filtering/reset, blind-new-run workflow. **Not implemented now.**
+- **M11** local voice system. A pre-M7 voice spike, if authorized, must stay behind a replaceable speech adapter so M11 can own VoiceProvider, selection, queue, interrupt, mute, volume, rate, conversation vs reaction speech, and previews. Experimental TTS is not AI identity. **Not authorized.**
 - **M12** user conversation.
 - **M13** manual takeover UX.
 - **M14** autonomous progression on the local reference title.
