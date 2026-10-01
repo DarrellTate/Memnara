@@ -9,12 +9,12 @@ from typing import Any
 from memnara.agent.actions import ActionProposal
 from memnara.agent.exceptions import ReasoningError, ReasoningTimeoutError
 from memnara.agent.reasoning import (
-    PROPOSAL_FORMAT,
     ReasoningProvider,
     build_user_prompt,
+    proposal_format_for,
     system_prompt_for,
 )
-from memnara.agent.thinking import prompt_size_report
+from memnara.agent.thinking import clip_text, prompt_size_report
 from memnara.agent.validator import ActionValidator
 from memnara.perception.context import PerceptionContext
 from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUnavailableError
@@ -38,6 +38,7 @@ class OllamaReasoningProvider(ReasoningProvider):
         keep_alive: str = DEFAULT_KEEP_ALIVE,
         num_predict: int | None = None,
         compact_prompt: bool = False,
+        reason_limit: int | None = None,
         session: LocalJsonSession | None = None,
         http_post=None,
     ) -> None:
@@ -48,6 +49,7 @@ class OllamaReasoningProvider(ReasoningProvider):
         self.keep_alive = keep_alive
         self.num_predict = num_predict
         self.compact_prompt = compact_prompt
+        self.reason_limit = reason_limit
         self.system_prompt = system_prompt_for(compact=compact_prompt)
         self._session = session
         self._owns_session = session is None and http_post is None
@@ -81,7 +83,7 @@ class OllamaReasoningProvider(ReasoningProvider):
             "stream": False,
             "think": self.think,
             "keep_alive": self.keep_alive,
-            "format": PROPOSAL_FORMAT,
+            "format": proposal_format_for(reason_limit=self.reason_limit),
             "messages": [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user},
@@ -115,6 +117,16 @@ class OllamaReasoningProvider(ReasoningProvider):
         eval_count = response.get("eval_count") if isinstance(response, dict) else None
         self.last_eval_count = int(eval_count) if isinstance(eval_count, int) else None
         proposal = validator.parse_and_validate(text)
+        if self.reason_limit is not None:
+            clipped = clip_text(proposal.reason, self.reason_limit)
+            if clipped != proposal.reason:
+                proposal = ActionProposal(
+                    action=proposal.action,
+                    parameters=proposal.parameters,
+                    reason=clipped,
+                    confidence=proposal.confidence,
+                    metadata=dict(proposal.metadata),
+                )
         if used_thinking:
             return ActionProposal(
                 action=proposal.action,

@@ -258,9 +258,10 @@ def test_meaningful_progress_resets_stuck_after_blocked_movement() -> None:
 
 def test_encounter_goal_does_not_treat_waiting_as_movement() -> None:
     text = SYSTEM_PROMPT.lower()
-    assert "prefer a movement action" in text
+    assert "prefer a movement or exploration action over wait" in text
     assert "standing still might cause a movement-triggered encounter" in text
     assert "wait remains valid" in text
+    assert "automatic progression" in text
 
 
 def test_wait_remains_a_legal_action() -> None:

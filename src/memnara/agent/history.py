@@ -60,6 +60,16 @@ class RecentStep:
     unaccounted_ms: float | None = None
     prompt_system_chars: int | None = None
     prompt_user_chars: int | None = None
+    perception_tier: str = "normal"
+    post_vision_skipped: bool = False
+    vision_call_count: int = 0
+    vision_png_bytes: int | None = None
+    vision_eval_count: int | None = None
+    vision_encode_ms: float | None = None
+    vision_http_ms: float | None = None
+    vision_parse_ms: float | None = None
+    vision_prompt_chars: int | None = None
+    vision_generation_chars: int | None = None
 
 
 class StepHistory:

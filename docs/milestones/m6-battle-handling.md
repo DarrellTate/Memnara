@@ -269,6 +269,12 @@ support configurable thinking depth so users can choose faster responses or more
 
 `--thinking fast|balanced|deliberate` maps onto one `ThinkingSettings` object. Default remains balanced until operator testing determines whether FAST should become a future consumer default. FAST shortens the reasoner system prompt, bounds `num_predict`, asks for a short visual description, and may reuse perception across idle animation. All profiles keep the same action JSON schema, ownership, stale-proposal checks, and Patch #4/`NO_EFFECT` history. `--timing-details` now prints acquire, freshness, post-acquire, classification, and unaccounted milliseconds so a step's wall clock can be reconstructed. `confirmation_ms` remains the post-action observation time for evidence compatibility.
 
+## Post-M6 perception efficiency
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #8 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized. Affect and voice were not implemented.
+
+Internal `PerceptionTier` LIGHT/NORMAL/RICH selects vision prompt depth from stuck, transition, UI flags, and pixel change. FAST and BALANCED may reuse a previous overworld reading across idle animation; menu, dialogue, battle, and visible text force a fresh read. After locomotion, or after an identical-frame press, the loop may skip the second VLM and classify from pixels, then reread on the next decision if the scene moved. FAST/BALANCED send scale-2 images unless `MEMNARA_VISION_SCALE` is set. `structured_step_events` lists existing outcomes for a later affect prototype.
+
 ## Performance
 
 No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step. Post-M6 Patch #3 does not add a vision call per pumped transition frame.

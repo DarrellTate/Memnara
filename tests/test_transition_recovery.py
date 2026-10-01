@@ -746,8 +746,9 @@ def test_ordinary_stable_gameplay_still_uses_the_decision_loop() -> None:
     assert all(step.passive_frames == 0 for step in result.steps)
     assert all(step.transition_state == "STABLE" for step in result.steps)
     assert runtime.presses == []
-    assert vision.calls == 3
-    assert result.steps[1].perception_reused is True
+    # One semantic vision per decision. Post-action confirmation is cheap pixels.
+    assert vision.calls == 2
+    assert all(step.post_vision_skipped is True for step in result.steps)
     assert executor.actions == ["MOVE_RIGHT", "MOVE_RIGHT"]
 
 

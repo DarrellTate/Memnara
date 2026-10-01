@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 
 from memnara.agent.actions import ActionProposal
@@ -22,6 +23,13 @@ PROPOSAL_FORMAT = {
     "required": ["action", "reason"],
 }
 
+
+def proposal_format_for(*, reason_limit: int | None = None) -> dict:
+    payload = copy.deepcopy(PROPOSAL_FORMAT)
+    if reason_limit is not None:
+        payload["properties"]["reason"]["maxLength"] = int(reason_limit)
+    return payload
+
 SYSTEM_PROMPT = """You are Memnara, a local agent controlling a video game through a constrained action interface.
 
 Rules:
@@ -32,10 +40,10 @@ Rules:
 - Uncertainty is acceptable. Prefer a short-term exploratory action over invented certainty.
 - Do not output multiple actions, scripts, shell commands, or code.
 - Do not write RAM or suggest privileged state.
-- Short reason only: why this one action might make progress.
+- Short reason only: why this one action might make progress. A phrase such as "Right blocked twice; try left." is enough. Do not write a paragraph for a routine action.
 - If the scene looks like a menu or dialogue, PRESS_A or PRESS_B or WAIT may be more appropriate than walking.
 - If evidence shows a battle, you may still use generic buttons; you do not have battle strategy.
-- If the goal is to explore or move through terrain to trigger an encounter, prefer a movement action. Do not choose WAIT only because standing still might cause a movement-triggered encounter. WAIT remains valid when visible evidence shows waiting is useful, such as dialogue, a menu, or an animation that is still changing.
+- If the current goal requires locomotion or exploration and there is no evidence that waiting itself can cause progress, prefer a movement or exploration action over WAIT. Do not choose WAIT only because standing still might cause a movement-triggered encounter. WAIT remains valid when visible evidence shows waiting is useful, such as dialogue, a menu, an animation that is still changing, automatic progression, or a transition.
 - Recent steps report movement outcomes. MOVED means the attempted locomotion changed position. BLOCKED means there is strong evidence the position did not change: the whole frame was unchanged, or a structured navigation token stayed the same. If one direction repeatedly returns BLOCKED, prefer a different direction or another safe exploratory action. UNCERTAIN means movement success was not established. Do not treat a center animation, or UNCERTAIN, as proof the move worked. Repeated UNCERTAIN results without other progress are not a reason to keep using the same direction.
 - Do not assume a button confirms, cancels, attacks, selects, or navigates based only on conventions from other games. Use recent observed outcomes to infer which controls are effective in the current interaction. If an action repeatedly produces NO_EFFECT in an unchanged interaction, prefer a different safe action.
 
@@ -44,11 +52,11 @@ Return JSON matching the schema: action, optional parameters, reason, optional c
 
 FAST_SYSTEM_PROMPT = """You are Memnara, a local agent controlling a video game through a constrained action interface.
 Use only supplied evidence. No walkthroughs, hidden knowledge, RAM, or emulator internals.
-Propose exactly ONE allowed action. Unsupported names are invalid. No scripts, shell, or code. Short reason.
+Propose exactly ONE allowed action. Unsupported names are invalid. No scripts, shell, or code. Short reason, not a paragraph.
 Uncertainty: prefer a short exploratory action over invented certainty.
 Menu or dialogue: PRESS_A, PRESS_B, or WAIT may be more appropriate than walking.
 Battle: generic buttons only; no invented mechanics or title-specific controls.
-Explore or encounter goals: prefer movement. Do not WAIT only because standing still might trigger a movement encounter. WAIT is valid when visible evidence shows waiting is useful (dialogue, menu, or a still-changing animation).
+Explore or encounter goals: if the goal requires locomotion/exploration and waiting itself is not shown to cause progress, prefer a movement/exploration action over WAIT. Do not WAIT only because standing still might trigger a movement encounter. WAIT is valid when visible evidence shows waiting is useful (dialogue, menu, a still-changing animation, automatic progression, or a transition).
 Recent steps: MOVED means locomotion changed position. BLOCKED means the whole frame or a navigation token did not change; if one direction repeats BLOCKED, try another safe action. UNCERTAIN is not proof the move worked. Repeated UNCERTAIN without other progress is not a reason to keep the same direction.
 Do not assume a button confirms, cancels, attacks, or navigates from other games. Use observed outcomes. If an action repeatedly produces NO_EFFECT in an unchanged interaction, prefer a different safe action.
 Return JSON: action, optional parameters, reason, optional confidence (0-1).

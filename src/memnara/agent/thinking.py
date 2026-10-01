@@ -48,6 +48,8 @@ class ThinkingSettings:
     vision_compact_prompt: bool
     reasoner_compact_prompt: bool
     perception_reuse: str
+    vision_scale: int = 3
+    reason_limit: int = 160
     keep_alive: str = DEFAULT_KEEP_ALIVE
     think: bool = False
 
@@ -77,35 +79,41 @@ def resolve_thinking(value: str | ThinkingProfile | None = None) -> ThinkingSett
             name=profile.value,
             history_maxlen=_FAST_HISTORY_MAXLEN,
             history_prompt_lines=_FAST_HISTORY_PROMPT_LINES,
-            vision_num_predict=192,
-            reasoner_num_predict=128,
-            vision_description_limit=240,
+            vision_num_predict=128,
+            reasoner_num_predict=96,
+            vision_description_limit=120,
             vision_compact_prompt=True,
             reasoner_compact_prompt=True,
             perception_reuse=REUSE_SIMILAR,
+            vision_scale=2,
+            reason_limit=80,
         )
     if profile is ThinkingProfile.DELIBERATE:
         return ThinkingSettings(
             name=profile.value,
             history_maxlen=_DELIBERATE_HISTORY_MAXLEN,
             history_prompt_lines=_DELIBERATE_HISTORY_PROMPT_LINES,
-            vision_num_predict=384,
+            vision_num_predict=320,
             reasoner_num_predict=256,
-            vision_description_limit=800,
+            vision_description_limit=400,
             vision_compact_prompt=False,
             reasoner_compact_prompt=False,
             perception_reuse=REUSE_EXACT,
+            vision_scale=3,
+            reason_limit=200,
         )
     return ThinkingSettings(
         name=ThinkingProfile.BALANCED.value,
         history_maxlen=_BALANCED_HISTORY_MAXLEN,
         history_prompt_lines=_BALANCED_HISTORY_PROMPT_LINES,
-        vision_num_predict=256,
-        reasoner_num_predict=192,
-        vision_description_limit=480,
+        vision_num_predict=192,
+        reasoner_num_predict=160,
+        vision_description_limit=180,
         vision_compact_prompt=True,
-        reasoner_compact_prompt=False,
-        perception_reuse=REUSE_EXACT,
+        reasoner_compact_prompt=True,
+        perception_reuse=REUSE_SIMILAR,
+        vision_scale=2,
+        reason_limit=120,
     )
 
 
@@ -119,3 +127,15 @@ def prompt_size_report(system: str, user: str) -> dict[str, int]:
         "total_chars": system_chars + user_chars,
         "approx_tokens": (system_chars + user_chars + 3) // 4,
     }
+
+
+def clip_text(text: str, limit: int) -> str:
+    """Trim on a word boundary when possible. Empty input stays empty."""
+    stripped = (text or "").strip()
+    if limit < 1 or len(stripped) <= limit:
+        return stripped
+    clipped = stripped[:limit].rstrip()
+    pivot = max(0, limit // 2)
+    if " " in clipped[pivot:]:
+        clipped = clipped.rsplit(" ", 1)[0]
+    return clipped or stripped[:limit]

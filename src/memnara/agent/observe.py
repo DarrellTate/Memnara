@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from memnara.agent.movement import MovementOutcome, SceneSignature, frame_signature, read_navigation_token
+from memnara.agent.perception_policy import similar_reuse_allowed
 from memnara.agent.readiness import frames_meaningfully_changed
-from memnara.agent.thinking import REUSE_SIMILAR
 from memnara.agent.transition import SceneStability, frame_stability
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary, fuse
@@ -35,6 +35,15 @@ class ObservedState:
     observation_id: str = ""
     observed_at: float = 0.0
     runtime_frame: int = 0
+    perception_tier: str = "normal"
+    post_vision_skipped: bool = False
+    vision_png_bytes: int | None = None
+    vision_eval_count: int | None = None
+    vision_encode_ms: float | None = None
+    vision_http_ms: float | None = None
+    vision_parse_ms: float | None = None
+    vision_prompt_chars: int | None = None
+    vision_generation_chars: int | None = None
 
 
 def quoted_caption_text(description: str) -> str:
@@ -223,18 +232,24 @@ class VisualOnlyObserver(PerceptionObserver):
         self._reuse_digest = None
         self._reuse_frame = None
 
-    def observe_frame(self, frame) -> ObservedState:
-        """Run one vision call, or reuse a still-equivalent stable reading.
+    def observe_frame(
+        self,
+        frame,
+        *,
+        request=None,
+        skip_vision: bool = False,
+        prior: ObservedState | None = None,
+        invalidate_reuse: bool = False,
+    ) -> ObservedState:
+        """Run one vision call, reuse a still-equivalent reading, or skip vision.
 
         Exact reuse matches the framebuffer digest. Similar reuse, when enabled,
-        also accepts idle animation below the pixel-change threshold. A fade or
-        a material scene change calls the vision model again.
+        also accepts idle animation below the pixel-change threshold unless the
+        cached reading is a menu, dialogue, battle, or visible-text scene.
+        skip_vision copies the prior semantic reading onto a cheap new frame
+        identity. A fade still calls the vision model again.
         """
         started = time.perf_counter()
-        # Identity belongs to the frame, so it is read before the vision call. A
-        # continuous runtime already named, timed, and hashed the frame it
-        # published; reuse that rather than running a parallel count that drifts
-        # by one model call and a second hash of the same pixels.
         published = _published_identity(self._emulator)
         digest = published.digest or digest_pixels(frame.pixels)
         stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
@@ -243,15 +258,28 @@ class VisualOnlyObserver(PerceptionObserver):
         runtime_frame = published.runtime_frame
         observed_at = published.captured_at or time.time()
         reused = False
+        skipped = False
         vision_started = time.perf_counter()
-        similar = (
-            self._reuse_policy == REUSE_SIMILAR
-            and stability is SceneStability.STABLE
-            and self._reuse_visual is not None
-            and self._reuse_frame is not None
-            and not frames_meaningfully_changed(self._reuse_frame, frame)
+        meaningful = (
+            self._reuse_frame is not None and frames_meaningfully_changed(self._reuse_frame, frame)
         )
-        if (
+        similar = similar_reuse_allowed(
+            reuse_policy=self._reuse_policy,
+            visual=self._reuse_visual,
+            stable=stability is SceneStability.STABLE,
+            meaningfully_changed=meaningful,
+        )
+        if skip_vision and prior is not None and prior.context.visual is not None:
+            visual = prior.context.visual
+            reused = True
+            skipped = True
+            if invalidate_reuse or stability is not SceneStability.STABLE:
+                self.invalidate_perception_reuse()
+            elif digest:
+                self._reuse_visual = visual
+                self._reuse_digest = digest
+                self._reuse_frame = frame
+        elif (
             stability is SceneStability.STABLE
             and self._reuse_visual is not None
             and digest
@@ -259,27 +287,38 @@ class VisualOnlyObserver(PerceptionObserver):
         ):
             visual = self._reuse_visual
             reused = True
+            self._reuse_frame = frame
+            self._reuse_digest = digest
         else:
-            visual = self._vision.observe(frame)
+            visual = self._call_vision(frame, request)
             if stability is SceneStability.STABLE and digest:
                 self._reuse_visual = visual
                 self._reuse_digest = digest
                 self._reuse_frame = frame
             else:
-                self._reuse_visual = None
-                self._reuse_digest = None
-                self._reuse_frame = None
+                self.invalidate_perception_reuse()
         vision_ms = 0.0 if reused else (time.perf_counter() - vision_started) * 1000
-        if reused:
-            self._reuse_frame = frame
-            self._reuse_digest = digest
-        context = fuse(visual=visual)
-        fingerprint = fingerprint_context(context, None)
+        stats = {} if reused else dict(getattr(self._vision, "last_call_stats", None) or {})
+        if skipped and prior is not None:
+            context = fuse(
+                visual=visual,
+                game_state=prior.context.game_state,
+                window_state=prior.context.window_state,
+            )
+            progress_token = prior.progress_token
+        else:
+            context = fuse(visual=visual)
+            progress_token = None
+        fingerprint = fingerprint_context(context, progress_token)
         elapsed = (time.perf_counter() - started) * 1000
+        tier_name = "normal"
+        if request is not None:
+            tier = getattr(request, "tier", None)
+            tier_name = str(getattr(tier, "value", tier) or "normal")
         return ObservedState(
             context=context,
             fingerprint=fingerprint,
-            progress_token=None,
+            progress_token=progress_token,
             screen_digest=digest,
             perception_ms=elapsed,
             summary=compact_summary(context),
@@ -291,7 +330,30 @@ class VisualOnlyObserver(PerceptionObserver):
             observation_id=observation_id,
             observed_at=observed_at,
             runtime_frame=runtime_frame,
+            perception_tier=tier_name,
+            post_vision_skipped=skipped,
+            vision_png_bytes=stats.get("png_bytes"),
+            vision_eval_count=stats.get("eval_count"),
+            vision_encode_ms=stats.get("encode_ms"),
+            vision_http_ms=stats.get("http_ms"),
+            vision_parse_ms=stats.get("parse_ms"),
+            vision_prompt_chars=stats.get("prompt_chars"),
+            vision_generation_chars=stats.get("generation_chars"),
         )
+
+    @property
+    def last_visual(self):
+        """Cached semantic reading, if any. Not a second observation."""
+        return self._reuse_visual
+
+    def _call_vision(self, frame, request):
+        observe = self._vision.observe
+        if request is None:
+            return observe(frame)
+        try:
+            return observe(frame, request=request)
+        except TypeError:
+            return observe(frame)
 
     @property
     def runtime_frame(self) -> int:

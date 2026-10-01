@@ -131,8 +131,12 @@ def test_profiles_resolve_and_default_is_balanced() -> None:
     assert fast.vision_num_predict < balanced.vision_num_predict < deliberate.vision_num_predict
     assert fast.reasoner_num_predict < balanced.reasoner_num_predict < deliberate.reasoner_num_predict
     assert fast.perception_reuse == "similar"
-    assert balanced.perception_reuse == "exact"
+    assert balanced.perception_reuse == "similar"
     assert deliberate.perception_reuse == "exact"
+    assert fast.vision_scale == 2
+    assert balanced.vision_scale == 2
+    assert deliberate.vision_scale == 3
+    assert fast.reason_limit < balanced.reason_limit < deliberate.reason_limit
     with pytest.raises(ValueError, match="unknown thinking profile"):
         parse_thinking_profile("turbo")
 
@@ -164,6 +168,7 @@ def test_profile_changes_generation_budgets_not_action_schema() -> None:
             http_post=post,
             num_predict=settings.reasoner_num_predict,
             compact_prompt=settings.reasoner_compact_prompt,
+            reason_limit=settings.reason_limit,
         )
         proposal = provider.propose(
             context=context,
@@ -175,7 +180,8 @@ def test_profile_changes_generation_budgets_not_action_schema() -> None:
         )
         assert proposal.action == "WAIT"
         body = captured[-1]
-        assert body["format"] == PROPOSAL_FORMAT
+        assert body["format"]["required"] == PROPOSAL_FORMAT["required"]
+        assert body["format"]["properties"]["reason"]["maxLength"] == settings.reason_limit
         assert body["options"]["num_predict"] == settings.reasoner_num_predict
         assert body["keep_alive"] == "30m"
         assert body["think"] is False

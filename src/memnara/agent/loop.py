@@ -20,6 +20,11 @@ from memnara.agent.interaction import InteractionOutcome, classify_interaction
 from memnara.agent.movement import MovementOutcome, classify_movement
 from memnara.agent.observe import ObservedState, PerceptionObserver, digest_pixels, meaningful_progress
 from memnara.agent.ownership import ControlGate
+from memnara.agent.perception_policy import (
+    can_skip_post_semantic_vision,
+    select_perception_tier,
+    vision_request_for,
+)
 from memnara.agent.readiness import (
     DEFAULT_PASSIVE_BUDGET_FRAMES,
     DEFAULT_PASSIVE_CHUNK_FRAMES,
@@ -30,7 +35,7 @@ from memnara.agent.readiness import (
 )
 from memnara.agent.reasoning import ReasoningProvider
 from memnara.agent.stuck import StuckDetector, StuckState
-from memnara.agent.thinking import DEFAULT_THINKING_PROFILE, ThinkingSettings, resolve_thinking
+from memnara.agent.thinking import DEFAULT_THINKING_PROFILE, ThinkingProfile, ThinkingSettings, resolve_thinking
 from memnara.agent.transition import (
     DEFAULT_TRANSITION_CHUNK_FRAMES,
     DEFAULT_TRANSITION_GRACE_FRAMES,
@@ -284,7 +289,7 @@ class AgentLoop:
                                 consecutive_failures = 0
                                 try:
                                     post_started = time.perf_counter()
-                                    after_acq = self._acquire()
+                                    after_acq = self._acquire(prior=before, action=proposal.action, prior_frame=before_acq.frame)
                                     after = after_acq.state
                                     post_acquire_ms = (time.perf_counter() - post_started) * 1000
                                 except Exception as exc:
@@ -353,6 +358,13 @@ class AgentLoop:
             model_wait_ms = before.vision_ms + (reasoning_ms or 0.0)
             if after_acq is not None:
                 model_wait_ms += after.vision_ms
+            before_calls = 0 if before.perception_reused else 1
+            after_calls = 0
+            if after_acq is not None and not after.perception_reused and not after.post_vision_skipped:
+                after_calls = 1
+            cost = before
+            if after_acq is not None and after.vision_png_bytes is not None and before.vision_png_bytes is None:
+                cost = after
             self.history.append(
                 RecentStep(
                     step=index,
@@ -402,6 +414,16 @@ class AgentLoop:
                     unaccounted_ms=unaccounted_ms,
                     prompt_system_chars=_prompt_size(self.reasoner, "system_chars"),
                     prompt_user_chars=_prompt_size(self.reasoner, "user_chars"),
+                    perception_tier=before.perception_tier,
+                    post_vision_skipped=bool(after.post_vision_skipped) if after_acq is not None else False,
+                    vision_call_count=before_calls + after_calls,
+                    vision_png_bytes=cost.vision_png_bytes,
+                    vision_eval_count=cost.vision_eval_count,
+                    vision_encode_ms=cost.vision_encode_ms,
+                    vision_http_ms=cost.vision_http_ms,
+                    vision_parse_ms=cost.vision_parse_ms,
+                    vision_prompt_chars=cost.vision_prompt_chars,
+                    vision_generation_chars=cost.vision_generation_chars,
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -428,13 +450,13 @@ class AgentLoop:
             for name in ("peek_frame", "passive_advance", "observe_frame")
         )
 
-    def _acquire(self) -> _Acquisition:
+    def _acquire(self, *, prior: ObservedState | None = None, action: str | None = None, prior_frame=None) -> _Acquisition:
         if self._can_step_runtime():
-            return self._acquire_steppable()
+            return self._acquire_steppable(prior=prior, action=action, prior_frame=prior_frame)
         return self._acquire_fallback(self.observer.observe())
 
-    def _acquire_steppable(self) -> _Acquisition:
-        """Advance button-free frames, then one vision call.
+    def _acquire_steppable(self, *, prior=None, action=None, prior_frame=None) -> _Acquisition:
+        """Advance button-free frames, then one vision call or a cheap confirm.
 
         A fade uses the transition budget. A stable frame that keeps changing
         on its own uses the passive-progression budget. Neither path is a
@@ -468,7 +490,39 @@ class AgentLoop:
             invalidate = getattr(self.observer, "invalidate_perception_reuse", None)
             if callable(invalidate):
                 invalidate()
-        state = self.observer.observe_frame(frame)
+        digest = digest_pixels(frame.pixels)
+        identical = bool(prior is not None and prior.screen_digest and prior.screen_digest == digest)
+        meaningful = bool(prior_frame is not None and frames_meaningfully_changed(prior_frame, frame))
+        prior_visual = prior.context.visual if prior is not None else getattr(self.observer, "last_visual", None)
+        skip = False
+        invalidate_reuse = False
+        if prior is not None:
+            skip = can_skip_post_semantic_vision(
+                action=action,
+                stuck_state=self.stuck.state.value,
+                saw_transition=saw,
+                stable=stability is SceneStability.STABLE,
+                digest_identical=identical,
+                meaningfully_changed=meaningful,
+                prior_visual=prior_visual,
+            )
+            invalidate_reuse = skip and (meaningful or not identical)
+        prefer_light = self.thinking.profile is ThinkingProfile.FAST
+        tier = select_perception_tier(
+            stuck_state=self.stuck.state.value,
+            saw_transition=saw,
+            prior_visual=prior_visual,
+            meaningfully_changed=meaningful,
+            prefer_light=prefer_light,
+        )
+        request = vision_request_for(self.thinking, tier)
+        state = self._observe_acquired_frame(
+            frame,
+            request=request,
+            skip_vision=skip,
+            prior=prior,
+            invalidate_reuse=invalidate_reuse,
+        )
         return _Acquisition(
             state=state,
             passive_frames=passive,
@@ -481,6 +535,19 @@ class AgentLoop:
             progression_chunks=progression_chunks,
             passive_runtime_ms=passive_runtime_ms,
         )
+
+    def _observe_acquired_frame(self, frame, *, request, skip_vision, prior, invalidate_reuse):
+        observe_frame = self.observer.observe_frame
+        try:
+            return observe_frame(
+                frame,
+                request=request,
+                skip_vision=skip_vision,
+                prior=prior,
+                invalidate_reuse=invalidate_reuse,
+            )
+        except TypeError:
+            return observe_frame(frame)
 
     def _pump_transient(self, frame, stability):
         """Button-free ticks while the frame stays near-black or near-uniform."""
@@ -694,6 +761,8 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
                 f"acquire_ms={step.acquire_ms} freshness_ms={step.freshness_ms} "
                 f"post_acquire_ms={step.post_acquire_ms} classification_ms={step.classification_ms} "
                 f"unaccounted_ms={step.unaccounted_ms} thinking={step.thinking_profile} "
+                f"tier={step.perception_tier} post_vision_skipped={step.post_vision_skipped} "
+                f"vision_calls={step.vision_call_count} "
                 f"progression_frames={step.progression_frames} "
                 f"progression_chunks={step.progression_chunks}{throughput}\n"
                 f"RUNTIME observation={step.observation_id or 'none'} "

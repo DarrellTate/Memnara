@@ -21,6 +21,7 @@ M5 bounded autonomous control loop
 M6 generic battle interaction mode
 post-M6 continuous runtime (owner thread + snapshot proposals)
 post-M6 thinking profiles (FAST / BALANCED / DELIBERATE)
+post-M6 perception tiers (LIGHT / NORMAL / RICH)
 ```
 
 ```text
@@ -36,7 +37,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#7. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#7 are **COMPLETE / APPROVED**. Planned and unauthorized before M7: Patch #8 perception/latency, an ephemeral affect prototype, and an asynchronous voice spike. None is a new milestone. M7 is not authorized.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#8. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#7 are **COMPLETE / APPROVED**. Patch #8 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. Planned and unauthorized before M7: an ephemeral affect prototype and an asynchronous voice spike. None is a new milestone. M7 is not authorized.
 
 ## Runtime families (design)
 
@@ -241,7 +242,7 @@ Profiles are independent of runtime, game, emulator, model, and voice. Example: 
 
 ## Thinking depth
 
-Thinking depth is an execution/configuration concern, not AI identity. `ThinkingSettings` presets (`fast`, `balanced`, `deliberate`) bound history windows, vision/reasoner generation, description length, and perception-reuse strictness. The future M10 UI can expose a Thinking selector next to Model. Switching Balanced → Fast does not create a different AI, change the model, or alter voice/runtime/controls. Default for this patch is `balanced`. Providers consume numeric/text budgets and should not branch on UI names. Naming debt (`ThinkingProfile` vs AI Profile) is non-blocking.
+Thinking depth is an execution/configuration concern, not AI identity. `ThinkingSettings` presets (`fast`, `balanced`, `deliberate`) bound history windows, vision/reasoner generation, description length, vision scale, and perception-reuse strictness. Internal `PerceptionTier` LIGHT/NORMAL/RICH is the same kind of execution concern: it is chosen from stuck, transition, UI flags, and pixel change, never from a second model call. The future M10 UI can expose a Thinking selector next to Model. Switching Balanced → Fast does not create a different AI, change the model, or alter voice/runtime/controls. Default for this patch is `balanced`. Providers consume numeric/text budgets and should not branch on UI names. Naming debt (`ThinkingProfile` vs AI Profile) is non-blocking.
 
 ## Commentary / experience (future)
 

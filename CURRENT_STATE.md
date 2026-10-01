@@ -2,7 +2,7 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: none
+CURRENT WORK: POST-M6 PATCH #8 (perception/latency)
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
@@ -11,7 +11,8 @@ POST-M6 PATCH #4: COMPLETE / APPROVED
 POST-M6 PATCH #5: COMPLETE / APPROVED
 POST-M6 PATCH #6: COMPLETE / APPROVED
 POST-M6 PATCH #7: COMPLETE / APPROVED
-NEXT PLANNED: POST-M6 PATCH #8 (perception/latency); POST-M6 AFFECT PROTOTYPE; POST-M6 VOICE SPIKE
+POST-M6 PATCH #8: IMPLEMENTED / AWAITING CHATGPT REVIEW
+NEXT PLANNED: POST-M6 AFFECT PROTOTYPE; POST-M6 VOICE SPIKE
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -26,13 +27,13 @@ POST-M6 PATCH #4 COMPLETE / APPROVED
 POST-M6 PATCH #5 COMPLETE / APPROVED
 POST-M6 PATCH #6 COMPLETE / APPROVED
 POST-M6 PATCH #7 COMPLETE / APPROVED
-POST-M6 PATCH #8 PLANNED
+POST-M6 PATCH #8 IMPLEMENTED / AWAITING CHATGPT REVIEW
 POST-M6 AFFECT PROTOTYPE PLANNED
 POST-M6 VOICE SPIKE PLANNED
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is complete and approved. The seventh post-M6 patch, thinking profiles and decision-latency accounting, is complete and approved. Default thinking remains balanced until operator testing decides otherwise. Planned next, still unauthorized: Patch #8 perception/latency cleanup, an ephemeral affect prototype, then an asynchronous voice spike. None of these is a numbered milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is complete and approved. The seventh post-M6 patch, thinking profiles and decision-latency accounting, is complete and approved. Default thinking remains balanced until operator testing decides otherwise. Patch #8 is implemented and awaiting ChatGPT review: cheaper structured vision, perception tiers, expanded similar reuse with UI invalidation, and cheap post-action confirmation when pixels already prove the outcome. Planned next, still unauthorized: an ephemeral affect prototype, then an asynchronous voice spike. None of these is a numbered milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -235,7 +236,7 @@ support configurable thinking depth so users can choose faster responses or more
 
 That finding does not replace the scorecards above. Operator steps such as 66/70/76 showed several seconds of wall time outside `perception_ms` + `reasoning_ms` + `execution_ms`. Accounting shows those seconds were not a hidden mystery bucket: they were the post-action acquire (a second vision call, stored historically as `confirmation_ms`) plus paced passive waits that the default CLI line omitted. Patch #7 times acquire, freshness, execution, post-acquire, and classification separately and reports `unaccounted_ms`. `--thinking fast|balanced|deliberate` selects a `ThinkingSettings` object (history window, vision/reasoner `num_predict`, description bound, compact prompts, exact vs similar perception reuse). Default remains `balanced` until operator testing determines whether FAST should become a future consumer default. FAST does not skip safety, ownership, stale-proposal checks, or Patch #4 outcomes. HTTP keep-alive reuses one loopback connection. `keep_alive=30m` is unchanged. This is not M7 memory.
 
-Planned and unauthorized before M7 (M0–M22 numbering unchanged): Patch #8 perception/latency cleanup; an ephemeral, session-local affect prototype with a gated text reaction; then an asynchronous voice spike behind a replaceable speech adapter. Those experiments must not compromise later M9/M10/M11 architecture. Do not start them without a new explicit authorization.
+Patch #8 is implemented and awaiting review. Fresh semantic vision was the remaining latency cost after Patch #6 smoothness. Internal `PerceptionTier` LIGHT/NORMAL/RICH is chosen from stuck, transition, UI flags, and pixel change; it is not another model call and not identity. FAST and BALANCED use similar reuse except on menu/dialogue/battle/visible-text. Locomotion and identical-frame presses may skip the post-action VLM and classify from pixels; a changed PRESS still rereads. FAST/BALANCED default vision scale is 2; DELIBERATE stays 3. `MEMNARA_VISION_SCALE` still overrides. Structured step events are listed for the planned affect prototype without implementing affect or voice.
 
 ## Open debts
 
@@ -273,7 +274,10 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 29. The demo records runtime evidence after `stop()` so a close failure is captured. That ordering is asserted at the runtime layer and not through `main`, which needs a ROM.
 30. The freshness check re-hashes the peeked frame even though the owner thread already published a digest for it. One extra hash per decision, no behavior change.
 31. `confirmation_ms` remains the post-action observation's `perception_ms`. The cheap `confirm_execution` probe is inside `freshness_ms`. The name is historical and was not renamed, to keep evidence keys stable.
-32. FAST similar-perception reuse can keep a previous visual reading across idle animation. A material interaction change that stays under the pixel threshold would be missed until the next exact change. Conservative and FAST-only.
+32. Similar-perception reuse can keep a previous visual reading across idle animation on FAST and BALANCED. Menu, dialogue, battle, and nonempty visible_text refuse similar reuse. A material interaction change that stays under the pixel threshold could still be missed until the next exact change.
 33. `num_predict` bounds can still truncate JSON on a verbose model. That fails closed (malformed), which costs a retry/failure rather than a guessed action.
 34. Operator live-game FAST timing is unmeasured. Synthetic accounting and provider-payload tests are verified; warm qwen live comparison is not in this patch.
 35. Repeated `PRESS_B → NO_EFFECT` in the latest live battle menu is not explained by missing history: FAST still receives those outcome lines. The model can still ignore them. Not treated as Patch #7 scope.
+36. FAST/BALANCED vision scale 2 reduced live synthetic VLM HTTP time versus scale 3. Real menu/dialogue/battle/text recognition at scale 2 is unverified on an operator title.
+37. Cheap post-action skip defers semantic vision after overworld locomotion. Battle/menu flags for that step come from the next decision's vision call. Pixel movement/NO_EFFECT outcomes remain immediate.
+38. Operator live-game Patch #8 FAST/BALANCED wall time is unmeasured. Synthetic accounting, provider payloads, and one loopback synthetic VLM scale sample are verified; a title run is not in this patch.

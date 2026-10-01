@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import socket
 import time
 import urllib.error
@@ -25,10 +24,9 @@ from memnara.perception.vision.images import DEFAULT_SCALE, encode_framebuffer_p
 from memnara.perception.vision.models import VisualObservation
 from memnara.perception.vision.parse import parse_observation
 from memnara.perception.vision.prompts import (
-    COMPACT_USER_PROMPT,
-    OBSERVATION_FORMAT,
-    SYSTEM_PROMPT,
-    USER_PROMPT,
+    observation_format_for,
+    system_prompt_for,
+    user_prompt_for,
 )
 
 import base64
@@ -88,15 +86,31 @@ class OllamaVisionProvider(VisionProvider):
         self._model_checked = False
         self.last_prompt_chars = 0
         self.last_eval_count: int | None = None
+        self.last_call_stats: dict[str, Any] = {}
 
-    def observe(self, frame: Framebuffer) -> VisualObservation:
+    def observe(self, frame: Framebuffer, request=None) -> VisualObservation:
         self.ensure_model()
+        compact = self.compact_prompt
+        include_entities = True
+        description_limit = self.description_limit
+        num_predict = self.num_predict
+        light = False
+        if request is not None:
+            compact = bool(request.compact_prompt)
+            include_entities = bool(request.include_entities)
+            description_limit = int(request.description_limit)
+            num_predict = int(request.num_predict)
+            light = bool(getattr(request, "light_prompt", False))
+        encode_started = time.perf_counter()
         png, width, height = encode_framebuffer_png(frame, scale=self.scale)
+        encode_ms = (time.perf_counter() - encode_started) * 1000
         image_b64 = base64.b64encode(png).decode("ascii")
-        user_prompt = COMPACT_USER_PROMPT if self.compact_prompt else USER_PROMPT
-        observation_format = copy.deepcopy(OBSERVATION_FORMAT)
-        if self.description_limit is not None:
-            observation_format["properties"]["description"]["maxLength"] = int(self.description_limit)
+        system_prompt = system_prompt_for(compact=compact, light=light)
+        user_prompt = user_prompt_for(compact=compact, light=light)
+        observation_format = observation_format_for(
+            include_entities=include_entities,
+            description_limit=description_limit,
+        )
         payload: dict[str, Any] = {
             "model": self.model,
             "stream": False,
@@ -104,7 +118,7 @@ class OllamaVisionProvider(VisionProvider):
             "keep_alive": self.keep_alive,
             "format": observation_format,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": user_prompt,
@@ -112,9 +126,10 @@ class OllamaVisionProvider(VisionProvider):
                 },
             ],
         }
-        if self.num_predict is not None:
-            payload["options"] = {"num_predict": int(self.num_predict)}
-        self.last_prompt_chars = len(SYSTEM_PROMPT) + len(user_prompt)
+        if num_predict is not None:
+            payload["options"] = {"num_predict": int(num_predict)}
+        prompt_chars = len(system_prompt) + len(user_prompt)
+        self.last_prompt_chars = prompt_chars
         started = time.perf_counter()
         try:
             response = self._http_post("/api/chat", payload)
@@ -127,7 +142,7 @@ class OllamaVisionProvider(VisionProvider):
             raise OllamaUnavailableError(f"Ollama chat HTTP {exc.code}: {body}") from exc
         except (urllib.error.URLError, OSError, socket.timeout) as exc:
             raise OllamaUnavailableError(f"Ollama chat failed: {exc}") from exc
-        latency_ms = (time.perf_counter() - started) * 1000
+        http_ms = (time.perf_counter() - started) * 1000
         message = (response.get("message") or {}) if isinstance(response, dict) else {}
         content = message.get("content") if isinstance(message, dict) else None
         thinking = message.get("thinking") if isinstance(message, dict) else None
@@ -140,20 +155,34 @@ class OllamaVisionProvider(VisionProvider):
             raise VisionParseError("Ollama chat response missing message.content")
         eval_count = response.get("eval_count") if isinstance(response, dict) else None
         eval_int = int(eval_count) if isinstance(eval_count, int) else None
+        parse_started = time.perf_counter()
         observation = parse_observation(
             text,
             model=self.model,
             scale=self.scale,
             image_width=width,
             image_height=height,
-            latency_ms=latency_ms,
+            latency_ms=http_ms,
             eval_count=eval_int,
         )
+        parse_ms = (time.perf_counter() - parse_started) * 1000
         self.last_eval_count = eval_int
-        if self.description_limit is not None:
-            clipped = _clip_text(observation.description, self.description_limit)
+        if description_limit is not None:
+            clipped = _clip_text(observation.description, description_limit)
             if clipped != observation.description:
                 observation = replace(observation, description=clipped)
+        self.last_call_stats = {
+            "png_bytes": len(png),
+            "payload_image_chars": len(image_b64),
+            "prompt_chars": prompt_chars,
+            "num_predict": num_predict,
+            "generation_chars": len(text),
+            "eval_count": eval_int,
+            "encode_ms": encode_ms,
+            "http_ms": http_ms,
+            "parse_ms": parse_ms,
+            "light_prompt": light,
+        }
         if used_thinking:
             extra = "json_in_message.thinking (content empty; think=false still used thinking field)"
             notes = f"{observation.notes}; {extra}" if observation.notes else extra
@@ -189,6 +218,6 @@ def _clip_text(text: str, limit: int) -> str:
     if limit < 1 or len(stripped) <= limit:
         return stripped
     clipped = stripped[:limit].rstrip()
-    if " " in clipped[ max(0, limit // 2) :]:
+    if " " in clipped[max(0, limit // 2) :]:
         clipped = clipped.rsplit(" ", 1)[0]
     return clipped or stripped[:limit]

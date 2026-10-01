@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from memnara.agent.actions import ActionRegistry, DEFAULT_GAMEPLAY_ACTIONS
 from memnara.agent.battle import mode_transition
+from memnara.agent.events import structured_step_events
 from memnara.agent.history import RecentStep
 from memnara.agent.loop import AgentLoop, format_step
 from memnara.agent.observe import VisualOnlyObserver
@@ -88,6 +90,15 @@ def controlled_window(*, show_window: bool, configured: str) -> str:
     return configured
 
 
+def resolve_vision_scale(thinking, *, environ=None) -> int:
+    """Thinking default unless the operator set MEMNARA_VISION_SCALE."""
+    env = os.environ if environ is None else environ
+    raw = env.get("MEMNARA_VISION_SCALE") if hasattr(env, "get") else None
+    if raw not in (None, ""):
+        return int(raw)
+    return int(thinking.vision_scale)
+
+
 def wire_controlled_runtime(adapter, vision, *, reuse_policy: str = "exact"):
     """Observer and executor share one emulator. No second process is created."""
     return VisualOnlyObserver(adapter, vision, reuse_policy=reuse_policy), GameBoyActionExecutor(adapter)
@@ -138,6 +149,7 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "step": step.step,
         "interaction_mode": step.interaction_mode,
         "mode_transition": mode_transition(previous_mode, step.interaction_mode),
+        "events": list(structured_step_events(step, previous_mode=previous_mode)),
         "goal_progressed": step.progress,
         "before_perception_summary": step.before_summary,
         "action": proposal.action if proposal else None,
@@ -166,6 +178,9 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         # Running total for the whole run, not a count for this step.
         "stale_proposals_dropped_total": step.stale_proposals_dropped,
         "thinking_profile": step.thinking_profile,
+        "perception_tier": step.perception_tier,
+        "post_vision_skipped": step.post_vision_skipped,
+        "vision_call_count": step.vision_call_count,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {
@@ -183,10 +198,19 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
             "classification_ms": step.classification_ms,
             "unaccounted_ms": step.unaccounted_ms,
             "total_ms": step.total_ms,
+            "vision_encode_ms": step.vision_encode_ms,
+            "vision_http_ms": step.vision_http_ms,
+            "vision_parse_ms": step.vision_parse_ms,
         },
         "prompt_sizes": {
             "system_chars": step.prompt_system_chars,
             "user_chars": step.prompt_user_chars,
+            "vision_chars": step.vision_prompt_chars,
+        },
+        "vision_cost": {
+            "png_bytes": step.vision_png_bytes,
+            "eval_count": step.vision_eval_count,
+            "generation_chars": step.vision_generation_chars,
         },
     }
 
@@ -204,10 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     evidence_path = args.evidence or (cfg.autonomy_dir / "m6_live_autonomy.json")
     thinking = resolve_thinking(args.thinking)
     http_session = LocalJsonSession.from_endpoint(cfg.ollama_host, timeout_s=cfg.vision_timeout_s)
+    vision_scale = resolve_vision_scale(thinking)
     vision = OllamaVisionProvider(
         endpoint=cfg.ollama_host,
         model=cfg.vision_model,
-        scale=cfg.vision_scale,
+        scale=vision_scale,
         timeout_s=cfg.vision_timeout_s,
         think=thinking.think,
         keep_alive=thinking.keep_alive,
@@ -224,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
         keep_alive=thinking.keep_alive,
         num_predict=thinking.reasoner_num_predict,
         compact_prompt=thinking.reasoner_compact_prompt,
+        reason_limit=thinking.reason_limit,
         session=http_session,
     )
     window = controlled_window(show_window=args.show_window, configured=cfg.pyboy_window)
@@ -251,6 +277,8 @@ def main(argv: list[str] | None = None) -> int:
             "reasoner_num_predict": thinking.reasoner_num_predict,
             "vision_description_limit": thinking.vision_description_limit,
             "perception_reuse": thinking.perception_reuse,
+            "vision_scale": vision_scale,
+            "reason_limit": thinking.reason_limit,
             "keep_alive": thinking.keep_alive,
         },
         "steps": [],

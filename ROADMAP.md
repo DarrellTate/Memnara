@@ -38,7 +38,7 @@ POST-M6 PATCH #4 COMPLETE / APPROVED
 POST-M6 PATCH #5 COMPLETE / APPROVED
 POST-M6 PATCH #6 COMPLETE / APPROVED
 POST-M6 PATCH #7 COMPLETE / APPROVED
-POST-M6 PATCH #8 PLANNED
+POST-M6 PATCH #8 IMPLEMENTED / AWAITING CHATGPT REVIEW
 POST-M6 AFFECT PROTOTYPE PLANNED
 POST-M6 VOICE SPIKE PLANNED
 M7 AUTHORIZED NO
@@ -56,7 +56,7 @@ M7 AUTHORIZED NO
 - **Post-M6 cadence patch** lets a frame-stepping runtime advance while a stable picture keeps changing on its own, and asks the model again when that motion settles. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
 - **Post-M6 continuous-runtime patch** keeps one owner thread advancing and rendering the emulator while perception and reasoning run on the agent thread, and drops a proposal that is no longer aimed at an equivalent scene. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
 - **Post-M6 thinking-profile patch** accounts for full decision wall time and exposes FAST/BALANCED/DELIBERATE latency-depth presets without changing AI identity. **COMPLETE / APPROVED.** Not a numbered milestone. M7 remains unauthorized.
-- **Post-M6 Patch #8 (planned)** perception efficiency and remaining decision-latency cleanup: shorter actionable visual descriptions, especially FAST visual generation, and safer post-action perception cost. Preserve Patch #6 continuous runtime and Patch #7 timing accounting. Do not switch models merely for benchmark numbers. **Not authorized.**
+- **Post-M6 Patch #8** perception efficiency and remaining decision-latency cleanup: shorter actionable visual descriptions, LIGHT/NORMAL/RICH tiers from cheap signals, similar reuse with UI invalidation, cheap post-action confirmation, FAST/BALANCED scale 2. Preserve Patch #6 continuous runtime and Patch #7 timing accounting. **IMPLEMENTED / AWAITING CHATGPT REVIEW.** Not a numbered milestone. M7 remains unauthorized.
 - **Post-M6 affect prototype (planned)** ephemeral, session-local, event-driven affect plus a gated text reaction. Deterministic from existing outcomes; not M9; not persistent attachment. Keep REASON and REACTION separate. **Not authorized.**
 - **Post-M6 voice spike (planned)** asynchronous speech of gated reactions through a replaceable speech adapter/queue. Must not pause the game, own the runtime clock, or block vision/reasoning/action. Not M11; not AI identity. Follows affect prototype review. **Not authorized.**
 - **M7** profile-aware persistent + session memory foundation. Requirements include: `ai_profile_id` ownership (never model ownership); session/working memory distinct from long-term store; SQLite schema; memory types/scopes; timestamps; model provenance (`model_id_at_creation` is metadata only); lineage (`source_memory_ids` / `source_game_ids`); CRUD primitives; bulk filtering/reset primitives. See [ADR-008](docs/adr/ADR-008-ai-memory-knowledge-architecture.md) (**ACCEPTED**). **Not authorized.**
