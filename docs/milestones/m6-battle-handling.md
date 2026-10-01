@@ -271,7 +271,7 @@ support configurable thinking depth so users can choose faster responses or more
 
 ## Post-M6 perception efficiency
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #8 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized. Affect and voice were not implemented.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #8 is **COMPLETE / APPROVED**. M7 stays unauthorized. Affect and voice were not implemented.
 
 Internal `PerceptionTier` LIGHT/NORMAL/RICH selects vision prompt depth from stuck, transition, UI flags, and pixel change. FAST and BALANCED may reuse a previous overworld reading across idle animation; menu, dialogue, battle, and visible text force a fresh read. After locomotion, or after an identical-frame press, the loop may skip the second VLM and classify from pixels, then reread on the next decision if the scene moved. FAST/BALANCED send scale-2 images unless `MEMNARA_VISION_SCALE` is set. `structured_step_events` lists existing outcomes for a later affect prototype.
 

@@ -37,7 +37,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#8. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#7 are **COMPLETE / APPROVED**. Patch #8 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. Planned and unauthorized before M7: an ephemeral affect prototype and an asynchronous voice spike. None is a new milestone. M7 is not authorized.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#8. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#8 are **COMPLETE / APPROVED**. Planned and unauthorized before M7: an ephemeral affect prototype and an asynchronous voice spike. None is a new milestone. M7 is not authorized.
 
 ## Runtime families (design)
 
