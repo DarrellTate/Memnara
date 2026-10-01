@@ -42,6 +42,13 @@ class RecentStep:
     progression_chunks: int = 0
     passive_runtime_ms: float | None = None
     model_wait_ms: float | None = None
+    observation_id: str = ""
+    proposal_age_ms: float | None = None
+    frames_since_observation: int = 0
+    # Running total for the whole run, not a per-step count.
+    stale_proposals_dropped: int = 0
+    execution_frames: int = 0
+    applied_observation_id: str = ""
 
 
 class StepHistory:

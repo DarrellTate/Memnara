@@ -2,13 +2,14 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: Post-M6 Patch #5 implemented, awaiting ChatGPT review
+CURRENT WORK: Post-M6 Patch #6 implemented, awaiting ChatGPT review
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
 POST-M6 PATCH #3: COMPLETE / APPROVED
 POST-M6 PATCH #4: COMPLETE / APPROVED
-POST-M6 PATCH #5: IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #5: COMPLETE / APPROVED
+POST-M6 PATCH #6: IMPLEMENTED / AWAITING CHATGPT REVIEW
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -20,11 +21,12 @@ POST-M6 PATCH #1 COMPLETE / APPROVED
 POST-M6 PATCH #2 COMPLETE / APPROVED
 POST-M6 PATCH #3 COMPLETE / APPROVED
 POST-M6 PATCH #4 COMPLETE / APPROVED
-POST-M6 PATCH #5 IMPLEMENTED / AWAITING CHATGPT REVIEW
+POST-M6 PATCH #5 COMPLETE / APPROVED
+POST-M6 PATCH #6 IMPLEMENTED / AWAITING CHATGPT REVIEW
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -198,6 +200,22 @@ Patch #3 improved transient scenes only; stable automatic animation remained cou
 
 That finding does not replace the scorecards above. `DecisionReadiness` is separate from scene stability. A stable frame whose pixels keep changing with no button held is `PASSIVE_PROGRESS`. The same runtime then advances in bounded chunks, comparing framebuffers and not calling the vision model per frame. When the picture settles, readiness is `INPUT_REQUIRED` and the normal decision runs once. A frame that is still changing when the budget ends is still shown to the reasoner. `PAUSED`, `USER_CONTROL`, `CONVERSATION`, and dry-run do not take those ticks. If the live frame changes after a proposal and before execute, the proposal is dropped. `--timing-details` adds model-wait time, passive-runtime time, progression frames, and emulated-frame throughput. A decision that still needs a model can take several seconds. This patch does not make gameplay real-time.
 
+```text
+POST-M6 HANDS-ON FINDING
+
+Multiple hands-on recordings showed multi-second complete runtime freezes during model inference in both battle and overworld play.
+
+Patch #5 reduced unnecessary model calls but did not solve decision-time runtime starvation.
+
+Patch #6 decouples runtime progression/rendering from model inference while using snapshot/version freshness checks to prevent stale actions.
+```
+
+That finding does not replace the scorecards above. One runtime owner thread now performs every emulator call: open, tick, capture, press, release, and close. It publishes immutable snapshots with an observation id, a digest, and a runtime frame count. Perception and reasoning read those snapshots on the agent thread, so a slow local model no longer stops the clock. The agent submits at most one validated action to a one-slot command queue, and the owner thread applies it. Every advanced frame is paced toward a target cadence, 60 emulated frames per second by default, so input application does not sprint ahead of normal game time.
+
+Before executing, the loop checks ownership and then semantic freshness against the observation it reasoned from. An idle animation on an equivalent scene still executes. An ownership change, a started transition, an unreadable frame, or a material scene change drops the proposal and records it as stale. Headless stays the default, `--show-window` still shows that same instance, and `--step-runtime` keeps the Patch #5 frame-stepped path available. `--timing-details` adds the observation id, proposal age, frames elapsed since the observation, and dropped stale proposals.
+
+Synthetic measurement with three seconds of model latency on one decision: the longest runtime freeze fell from 3004 ms to 47 ms, emulated frames advanced during inference rose from 24 to 294, and effective cadence went from 5.3 to 60.3 emulated frames per second with identical vision and reasoning call counts. That harness is local and not committed. The live equivalent is committed as integration tests that skip without the operator ROM: against real headless PyBoy, three seconds of latency advanced 180 frames at 60.0 effective emulated frames per second with a 34 ms longest freeze, every emulator call came from the owner thread, one action emulated exactly the 24 settle frames PyBoy itself counted, and shutdown released every button while the adapter was still open. A visible SDL2 window showed the same ownership and published new frames. This patch does not make model decisions fast. It stops them from stopping the game.
+
 ## Open debts
 
 1. Coordinate/facing movement not experimentally proven (M2 private integration).
@@ -218,4 +236,18 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 13. A fixed-camera step that stays inside the central window is `UNCERTAIN`. It is not called `BLOCKED`, and it is not called a successful move, until a scene shift or a structured navigation token is available. No map was added.
 14. Transition near-black and near-uniform thresholds, and the 120-frame / 8-frame grace budget, are accepted implementation-level tuning for future runtimes. They are not a blocker and do not authorize a loading-screen system.
 15. The visual fingerprint still includes the free-form caption and scene type. A rephrased quote on an unchanged frame is `NO_EFFECT` and is not progress. The unchanged-fingerprint stuck counter may not see that rephrase. The same-action counter still escalates a repeated no-effect press.
-16. Passive progression uses a pixel-change threshold and a 180-frame / 8-frame budget with a 5-second hang guard. Motion under the threshold does not keep the clock running. Motion above it can consume the budget before the next decision, including a small repeating animation on an otherwise actionable scene. That tuning is not a second stuck detector and does not authorize a background emulator thread.
+16. Passive progression uses a pixel-change threshold and a 180-frame / 8-frame budget with a 5-second hang guard. Motion under the threshold does not keep the clock running. Motion above it can consume the budget before the next decision, including a small repeating animation on an otherwise actionable scene. That tuning is not a second stuck detector and does not authorize a background emulator thread. The runtime owner thread added later came from a separate Patch #6 authorization.
+17. Semantic freshness uses the same pixel-change threshold as passive progression. An animation above that threshold drops a proposal that a person would still consider valid, and a scene change below it is treated as equivalent. Generic VISION does not re-read the scene during the freshness check, so a battle starting or ending is caught as a material frame change rather than as a battle-mode change. Structured-state observers that implement `confirm_execution` still trip the mode check.
+18. Snapshot granularity is the 2-frame runtime chunk, so the shortest observable publish gap is about 33 ms plus OS scheduling jitter.
+19. Exact-digest perception reuse hits less often while the runtime keeps moving, because a live scene changes pixels. Per-observation model-call counts are unchanged, and no extra call per step was added.
+20. The continuous runtime paces frames with sleeps because the PyBoy adapter runs unthrottled. Cadence is approximate, not frame-locked, and a loaded machine falls behind the target rather than catching up.
+21. `from memnara.config import ...` as the first import in a process hits a pre-existing package import cycle through `memnara.perception`. Importing `memnara.agent` first avoids it. This predates Patch #6 and is not fixed here.
+22. `CONTINUOUS` is used as a capability name and is not in the ADR-007 catalog. It needs project-manager review before it is treated as accepted.
+23. The owner thread repeats the ownership check before moving a button, but it cannot judge semantic freshness. Semantic validation stays on the agent side, before submit.
+24. `stale_proposals_dropped` is a run-long running total, so it climbs across steps rather than reporting one step. The evidence key is named `stale_proposals_dropped_total` and the CLI field matches.
+25. `RuntimeActionExecutor.release_all` is a no-op, because input release belongs to the owner thread inside the command. The agent loop's own release in its `finally` therefore does nothing in continuous mode. Release still happens, on runtime shutdown and on a failed command.
+26. `should_advance` and `can_apply_input` are independent predicates. A frozen runtime still accepts input unless the caller also refuses it through `can_apply_input`. The demo wires PAUSED to both; another caller must do so deliberately.
+27. Cancelling a timed-out command is best effort. If the owner thread passes the cancel check in the instant before the flag is set, the action applies while the caller already reported a timeout. The window is microseconds and the action is still ownership-checked.
+28. Abandoning a command does not clear the one-slot queue early, so the next submit can be refused until the owner thread finishes the one it holds.
+29. The demo records runtime evidence after `stop()` so a close failure is captured. That ordering is asserted at the runtime layer and not through `main`, which needs a ROM.
+30. The freshness check re-hashes the peeked frame even though the owner thread already published a digest for it. One extra hash per decision, no behavior change.

@@ -14,6 +14,7 @@ from memnara.agent.exceptions import (
     ReasoningError,
 )
 from memnara.agent.execute import ActionExecutor, ExecutionResult
+from memnara.agent.freshness import DecisionSignature, signature_of, staleness_reason, transition_started
 from memnara.agent.history import RecentStep, StepHistory
 from memnara.agent.interaction import InteractionOutcome, classify_interaction
 from memnara.agent.movement import MovementOutcome, classify_movement
@@ -40,6 +41,9 @@ from memnara.agent.validator import ActionValidator
 from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUnavailableError
 
 
+_TRANSIENT_STALE = "the scene started transitioning"
+
+
 @dataclass(frozen=True)
 class LoopResult:
     halt_reason: str
@@ -56,6 +60,7 @@ class _Acquisition:
     saw_transition: bool
     grace_remaining: int
     suppressed: bool
+    frame: object | None = None
     decision_readiness: str = "UNKNOWN"
     progression_frames: int = 0
     progression_chunks: int = 0
@@ -118,6 +123,7 @@ class AgentLoop:
     def run(self) -> LoopResult:
         consecutive_failures = 0
         halt = "max_steps"
+        stale_dropped = 0
         for index in range(1, self.max_steps + 1):
             started = time.perf_counter()
             try:
@@ -132,9 +138,18 @@ class AgentLoop:
             error = ""
             reasoning_ms: float | None = None
             execution_ms: float | None = None
+            execution_frames = 0
+            applied_observation_id = ""
             after = before
             after_acq: _Acquisition | None = None
             interaction_mode = derive_battle_view(before.context).mode.value
+            signature = signature_of(
+                before,
+                owner=self.ownership.owner.value,
+                interaction_mode=interaction_mode,
+            )
+            proposal_age_ms: float | None = None
+            frames_since_observation = 0
 
             if not before_acq.suppressed:
                 history_lines = self.history.action_lines()
@@ -182,7 +197,14 @@ class AgentLoop:
                 reasoning_ms = (time.perf_counter() - reason_started) * 1000
 
                 if validation_ok and proposal is not None:
+                    proposal_age_ms = max(0.0, (time.time() - before.observed_at) * 1000)
+                    frames_since_observation = max(
+                        0, self._runtime_frame() - before.runtime_frame
+                    )
                     if not self.ownership.allows_gameplay():
+                        # Ownership moved while the model was thinking, so this
+                        # proposal is as stale as a changed scene.
+                        stale_dropped += 1
                         error = f"OwnershipDeniedError: owner={self.ownership.owner.value}"
                     elif (
                         before.scene_stability == SceneStability.TRANSIENT.value
@@ -193,27 +215,31 @@ class AgentLoop:
                         error = "TransitionInputError: gameplay input refused while the scene is transient"
                     else:
                         confirmed = self._confirm_execution(before)
-                        reasoned_mode = derive_battle_view(before.context).mode
                         confirmed_mode = derive_battle_view(confirmed.context).mode
-                        if reasoned_mode != confirmed_mode:
+                        stale = self._staleness(signature, before_acq, confirmed_mode.value)
+                        if confirmed_mode.value != signature.interaction_mode:
+                            stale_dropped += 1
                             error = (
-                                f"StaleModeError: reasoned={reasoned_mode.value} "
+                                f"StaleModeError: reasoned={signature.interaction_mode} "
                                 f"confirmed={confirmed_mode.value}"
                             )
-                        elif self._scene_went_transient(before):
+                        elif stale == _TRANSIENT_STALE or self._scene_went_transient(before):
+                            stale_dropped += 1
                             error = (
                                 "StaleSceneError: reasoned=STABLE confirmed=TRANSIENT"
                             )
-                        elif self._observation_diverged(before):
-                            error = (
-                                "StaleObservationError: the frame changed after it was reasoned on"
-                            )
+                        elif stale:
+                            stale_dropped += 1
+                            error = f"StaleObservationError: {stale}"
                         elif self.dry_run:
                             # execution_ok True means the no-execution policy completed, not that input occurred.
                             execution_ok = True
                             consecutive_failures = 0
                         else:
                             exec_started = time.perf_counter()
+                            bind = getattr(self.executor, "bind_observation", None)
+                            if callable(bind):
+                                bind(before.observation_id)
                             try:
                                 result = self.executor.execute(proposal)
                             except Exception as exc:
@@ -228,6 +254,8 @@ class AgentLoop:
                             execution_ms = (time.perf_counter() - exec_started) * 1000
                             executed = result.executed
                             execution_ok = result.ok
+                            execution_frames = result.frames_applied
+                            applied_observation_id = result.applied_observation_id
                             if result.error:
                                 error = result.error
                             if not result.ok:
@@ -327,6 +355,12 @@ class AgentLoop:
                     progression_chunks=progression_chunks,
                     passive_runtime_ms=passive_runtime_ms,
                     model_wait_ms=model_wait_ms,
+                    observation_id=before.observation_id,
+                    proposal_age_ms=proposal_age_ms,
+                    frames_since_observation=frames_since_observation,
+                    stale_proposals_dropped=stale_dropped,
+                    execution_frames=execution_frames,
+                    applied_observation_id=applied_observation_id,
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -400,6 +434,7 @@ class AgentLoop:
             saw_transition=saw,
             grace_remaining=max(0, self.transition_grace_frames - self._grace_used),
             suppressed=False,
+            frame=frame,
             decision_readiness=readiness,
             progression_frames=progression_frames,
             progression_chunks=progression_chunks,
@@ -417,8 +452,10 @@ class AgentLoop:
                 )
                 if chunk < 1:
                     break
-                frame = self.observer.passive_advance(chunk)
+                frame, advanced = self.observer.passive_advance(chunk)
                 self._grace_used += chunk
+                if not advanced:
+                    break
                 passive += chunk
                 stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
         return frame, stability, passive
@@ -444,9 +481,14 @@ class AgentLoop:
             step = min(self.passive_chunk_frames, self.passive_budget_frames - used)
             if step < 1:
                 break
-            nxt = self.observer.passive_advance(step)
+            nxt, advanced = self.observer.passive_advance(step)
             used += step
             stability = frame_stability(nxt.pixels, nxt.width, nxt.height, nxt.pixel_format)
+            if not advanced:
+                # The runtime did not deliver those frames, so do not count them.
+                readiness = DecisionReadiness.UNKNOWN.value
+                current = nxt
+                break
             changed = frames_meaningfully_changed(current, nxt)
             current = nxt
             if stability is SceneStability.TRANSIENT:
@@ -505,24 +547,61 @@ class AgentLoop:
         except Exception:
             return False
 
-    def _observation_diverged(self, before: ObservedState) -> bool:
-        """True when the live framebuffer no longer matches the reasoned frame.
+    def _runtime_frame(self) -> int:
+        """Live runtime frame counter. Zero on a runtime that does not expose one."""
+        return int(getattr(self.observer, "runtime_frame", 0) or 0)
 
-        Peek does not tick. A match means the proposal still targets this frame.
-        A peek that raises, or a frame with no pixels, is treated as diverged.
-        Runtimes without peek_frame stay on the normal execute path.
+    def _staleness(self, signature: DecisionSignature, before_acq: _Acquisition, mode_now: str) -> str:
+        """Why the proposal no longer targets the reasoned state, or "" if it does.
+
+        Peek does not advance the runtime. An idle animation that moves a few
+        pixels stays equivalent. A transition, a structured-state change, a
+        material scene change, an unreadable frame, or an ownership change is
+        stale. Runtimes that cannot peek keep the previous execute path.
         """
+        owner_now = self.ownership.owner.value
+        if owner_now != signature.owner:
+            return f"ownership changed from {signature.owner} to {owner_now}"
         peek = getattr(self.observer, "peek_frame", None)
-        if not callable(peek) or not before.screen_digest:
-            return False
+        if not callable(peek) or before_acq.frame is None:
+            return ""
         try:
-            frame = peek()
+            frame_now = peek()
+        except Exception as exc:
+            return f"the live frame could not be read ({type(exc).__name__})"
+        digest_now = digest_pixels(frame_now.pixels)
+        if not digest_now:
+            return "the live frame has no pixels"
+        stability_now = frame_stability(
+            frame_now.pixels, frame_now.width, frame_now.height, frame_now.pixel_format
+        ).value
+        if transition_started(signature, stability_now):
+            return _TRANSIENT_STALE
+        return staleness_reason(
+            signature=signature,
+            owner_now=owner_now,
+            mode_now=mode_now,
+            stability_now=stability_now,
+            digest_now=digest_now,
+            frame_before=before_acq.frame,
+            frame_now=frame_now,
+            token_now=self._peek_progress_token(),
+        )
+
+    def _peek_progress_token(self) -> str | None:
+        """Structured token for the live frame, when a runtime can supply one.
+
+        Generic VISION has none without another model call, so this stays None
+        there. A structured-state observer can answer cheaply.
+        """
+        peek_token = getattr(self.observer, "peek_progress_token", None)
+        if not callable(peek_token):
+            return None
+        try:
+            token = peek_token()
         except Exception:
-            return True
-        digest = digest_pixels(frame.pixels)
-        if not digest:
-            return True
-        return digest != before.screen_digest
+            return None
+        return token if token else None
 
     def _confirm_execution(self, prior: ObservedState) -> ObservedState:
         confirm = getattr(self.observer, "confirm_execution", None)
@@ -560,10 +639,11 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
     timing_line = ""
     if timing_details:
         throughput = ""
+        # Only the progression episode is timed, so only its frames may be
+        # divided by that time. Fade-pump frames are advanced outside this window.
         runtime_ms = step.passive_runtime_ms or 0.0
-        advanced = step.passive_frames + step.progression_frames
-        if runtime_ms > 0 and advanced:
-            throughput = f" emulated_fps={advanced / (runtime_ms / 1000):.1f}"
+        if runtime_ms > 0 and step.progression_frames:
+            throughput = f" emulated_fps={step.progression_frames / (runtime_ms / 1000):.1f}"
         timing_line = (
                 f"\nTIMING reused={step.perception_reused} "
                 f"vision_ms={step.vision_ms} perception_ms={step.perception_ms} "
@@ -571,7 +651,13 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
                 f"confirmation_ms={step.confirmation_ms} total_ms={step.total_ms} "
                 f"model_wait_ms={step.model_wait_ms} passive_runtime_ms={step.passive_runtime_ms} "
                 f"progression_frames={step.progression_frames} "
-                f"progression_chunks={step.progression_chunks}{throughput}"
+                f"progression_chunks={step.progression_chunks}{throughput}\n"
+                f"RUNTIME observation={step.observation_id or 'none'} "
+                f"applied_observation={step.applied_observation_id or 'none'} "
+                f"proposal_age_ms={step.proposal_age_ms} "
+                f"frames_since_observation={step.frames_since_observation} "
+                f"execution_frames={step.execution_frames} "
+                f"stale_proposals_dropped_total={step.stale_proposals_dropped}"
             )
     return (
         f"STEP {step.step}\n"

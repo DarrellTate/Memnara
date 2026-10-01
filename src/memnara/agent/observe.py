@@ -30,6 +30,9 @@ class ObservedState:
     scene_stability: str = "STABLE"
     perception_reused: bool = False
     vision_ms: float = 0.0
+    observation_id: str = ""
+    observed_at: float = 0.0
+    runtime_frame: int = 0
 
 
 def quoted_caption_text(description: str) -> str:
@@ -150,6 +153,32 @@ class PerceptionObserver(ABC):
         return prior
 
 
+@dataclass(frozen=True)
+class _PublishedIdentity:
+    """What a continuous runtime already knows about the frame it handed over.
+
+    Absent values stay empty or zero rather than being replaced by a live
+    reading, so a frame-stepped runtime is distinguishable from frame 0 of a
+    continuous one.
+    """
+
+    observation_id: str = ""
+    digest: str = ""
+    runtime_frame: int = 0
+    captured_at: float = 0.0
+
+
+def _published_identity(source) -> _PublishedIdentity:
+    if not hasattr(source, "last_observation_id"):
+        return _PublishedIdentity()
+    return _PublishedIdentity(
+        observation_id=str(getattr(source, "last_observation_id", "") or ""),
+        digest=str(getattr(source, "last_digest", "") or ""),
+        runtime_frame=int(getattr(source, "last_runtime_frame", 0) or 0),
+        captured_at=float(getattr(source, "last_captured_at", 0.0) or 0.0),
+    )
+
+
 class VisualOnlyObserver(PerceptionObserver):
     """Generic VISION + INPUT observer. No structured game-state adapter."""
 
@@ -158,6 +187,7 @@ class VisualOnlyObserver(PerceptionObserver):
         self._vision = vision
         self._reuse_digest: str | None = None
         self._reuse_visual = None
+        self._observation_seq = 0
 
     def observe(self) -> ObservedState:
         return self.observe_frame(self.peek_frame())
@@ -167,11 +197,16 @@ class VisualOnlyObserver(PerceptionObserver):
         return self._emulator.capture_frame()
 
     def passive_advance(self, frames: int):
-        """Advance frames with no button held, then capture. Not a gameplay action."""
+        """Advance frames with no button held, then capture.
+
+        Returns the frame and whether the runtime actually advanced. A continuous
+        runtime reports False when the frames did not arrive, so the caller does
+        not count progress that never happened. Not a gameplay action.
+        """
         if frames < 1:
             raise ValueError("frames must be >= 1")
-        self._emulator.tick(frames, render=True)
-        return self._emulator.capture_frame()
+        advanced = self._emulator.tick(frames, render=True)
+        return self._emulator.capture_frame(), advanced is not False
 
     def probe_stability(self) -> str:
         """Pixel stability of the current frame. Does not call vision."""
@@ -191,8 +226,17 @@ class VisualOnlyObserver(PerceptionObserver):
         vision model again.
         """
         started = time.perf_counter()
-        digest = digest_pixels(frame.pixels)
+        # Identity belongs to the frame, so it is read before the vision call. A
+        # continuous runtime already named, timed, and hashed the frame it
+        # published; reuse that rather than running a parallel count that drifts
+        # by one model call and a second hash of the same pixels.
+        published = _published_identity(self._emulator)
+        digest = published.digest or digest_pixels(frame.pixels)
         stability = frame_stability(frame.pixels, frame.width, frame.height, frame.pixel_format)
+        self._observation_seq += 1
+        observation_id = published.observation_id or f"{self._observation_seq}:{digest}"
+        runtime_frame = published.runtime_frame
+        observed_at = published.captured_at or time.time()
         reused = False
         vision_started = time.perf_counter()
         if (
@@ -227,5 +271,13 @@ class VisualOnlyObserver(PerceptionObserver):
             scene_stability=stability.value,
             perception_reused=reused,
             vision_ms=vision_ms,
+            observation_id=observation_id,
+            observed_at=observed_at,
+            runtime_frame=runtime_frame,
         )
+
+    @property
+    def runtime_frame(self) -> int:
+        """Frames the runtime has advanced right now. Zero when it cannot say."""
+        return int(getattr(self._emulator, "frames_advanced", 0) or 0)
 

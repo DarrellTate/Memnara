@@ -15,6 +15,11 @@ class ExecutionResult:
     released: bool = True
     detail: str = ""
     error: str = ""
+    # Runtimes that advance on their own clock report what the action actually
+    # cost and which published observation it landed on. Zero and empty mean the
+    # executor does not measure them, not that nothing happened.
+    frames_applied: int = 0
+    applied_observation_id: str = ""
 
 
 class ActionExecutor(ABC):

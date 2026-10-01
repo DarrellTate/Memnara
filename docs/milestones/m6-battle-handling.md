@@ -169,7 +169,7 @@ A stable framebuffer whose digest matches the previous stable reading reuses tha
 
 ## Post-M6 runtime cadence
 
-This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #5 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #5 is **COMPLETE / APPROVED**. M7 stays unauthorized.
 
 `DecisionReadiness` is `INPUT_REQUIRED`, `PASSIVE_PROGRESS`, or `UNKNOWN`. It is not `SceneStability`. A near-black or near-uniform frame is still a transition. A structured frame that keeps changing with no button held can be passive progress: battle motion, text reveal, or a camera shift are examples of the kind of motion, and none of those layouts is encoded.
 
@@ -178,6 +178,79 @@ The pump runs only when Memnara has `AI_CONTROL`, the run is not a dry run, and 
 `PAUSED`, `USER_CONTROL`, and `CONVERSATION` do not take those ticks. Before execute, a peek that no longer matches the reasoned framebuffer drops the proposal (`StaleObservationError`). Patch #4 reuse still applies to an unchanged stable frame and still misses when the pixels differ. A fade still clears the cache.
 
 The default CLI adds `readiness=`. `--timing-details` adds model-wait time, passive-runtime time, progression frames, and emulated-frame throughput. That throughput is emulated frames per wall-clock second, not a display refresh rate.
+
+## Post-M6 continuous runtime
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #6 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+
+```text
+POST-M6 HANDS-ON FINDING
+
+Multiple hands-on recordings showed multi-second complete runtime freezes during model inference in both battle and overworld play.
+
+Patch #5 reduced unnecessary model calls but did not solve decision-time runtime starvation.
+
+Patch #6 decouples runtime progression/rendering from model inference while using snapshot/version freshness checks to prevent stale actions.
+```
+
+### Who owns the emulator
+
+`ThreadedEmulatorRuntime` starts one thread named `memnara-runtime`. That thread is the only caller of `start`, `tick`, `capture_frame`, `press_button`, `release_button`, and `stop`. Opening and closing are passed in as `open_runtime` and `close_runtime` and run on that thread, so a window the emulator creates is created, pumped, and destroyed by one thread. The agent thread reads immutable snapshots and submits commands. The two threads never call the emulator at the same time, so a single-threaded vendor emulator stays safe. `start()` returns only after the owner thread has published its first snapshot. There is one emulator instance and no second process.
+
+If the owner thread will not leave, `stop()` raises `RuntimeShutdownError` and the emulator is deliberately left alone, because freeing it from another thread while the owner is inside a native call is worse than leaking it. A runtime cannot be restarted; a new one is constructed instead.
+
+Only `tick` emulates frames. A button call queues a press and a deferred release and emulates nothing, so it is neither counted nor paced. That was verified against PyBoy 2.7.0 and against the live adapter: one action reports 24 frames applied, which is the settle tick count.
+
+### Snapshots and observation identity
+
+Each published `RuntimeSnapshot` is frozen and carries an observation id, a framebuffer copy, a digest, the runtime frame counter, a wall-clock timestamp, and whether the runtime was advancing. `ObservedState` carries its own `observation_id`, `observed_at`, and `runtime_frame`, so every proposal is traceable to the observation it was reasoned from. Model inference reads a published copy, never a mutating framebuffer.
+
+### Commands
+
+`ActionCommand` carries the action, its parameters, and the source observation id. The queue holds one item. At most one meaningful gameplay action is pending, a second is refused rather than buffered, and there is no speculative lookahead. The owner thread applies the command through the same `GameBoyActionExecutor` logic and returns the frames it cost and the observation it landed on. Those reach the step record, so `--timing-details` shows both the observation a decision was reasoned from and the one its action landed on.
+
+An action the agent stopped waiting for is cancelled rather than applied late: the owner thread checks the cancel flag before it touches a button. A runtime that dies mid-action fails the command it was holding instead of leaving the caller waiting.
+
+### Freshness
+
+Two checks run before execution, in this order. Ownership comes first through the existing `ControlGate`, and the owner thread repeats it before it moves a button. Then semantic freshness compares the live frame against the decision signature: owner, interaction mode, scene stability, structured token, and digest. Perception flags are deliberately absent, because re-reading them would cost another vision call. An ownership change, an interaction-mode change, a `STABLE` frame that became `TRANSIENT`, a structured token that moved on, an unreadable or empty frame, or a material framebuffer change drops the proposal. An identical digest is fresh without a pixel comparison. An idle animation below the change threshold stays valid, so a battle menu that animates while `FIGHT` is still highlighted still executes. The frame number alone never decides. No second model call is made, and no free-form model wording is parsed.
+
+### Cadence and ownership
+
+The default target is 60 emulated frames per second, configurable with `--target-fps` and not hard-coded in the loop. Every advanced frame is paced, input application included, so game time stays approximately normal. `PAUSED` freezes the runtime. `AI_CONTROL`, `USER_CONTROL`, and `CONVERSATION` keep it advancing, and the ownership gate still blocks AI input in the latter two. The runtime itself is ownership-agnostic: the demo passes a `should_advance` predicate.
+
+### Visibility, dry run, and shutdown
+
+Headless stays the default and the continuous runtime does not require SDL2. `--show-window` shows that same controlled instance. `--step-runtime` keeps the Patch #5 frame-stepped path for comparison. Dry run still performs no gameplay input while the runtime keeps advancing, which matches what a person watching the window would expect. Stop sets a flag, releases every button on the owner thread, fails any pending command, and joins the thread, so there is no orphan window, hung process, or held button.
+
+### Measured
+
+Synthetic benchmark, one decision with three seconds of model latency, identical frames and identical model-call counts on both sides:
+
+| Metric | Decision loop owns the clock | Runtime owner thread |
+|---|---|---|
+| Longest runtime freeze | 3004 ms | 47 ms |
+| Emulated frames advanced once inference began | 24 | 294 |
+| Effective emulated frames per second | 5.3 | 60.3 |
+| Vision calls | 2 | 2 |
+| Reasoning calls | 1 | 1 |
+| Stale proposals dropped | 0 | 0 |
+
+Wall clock per step rose from 4.51 s to 4.91 s because settle frames are now paced to real game time instead of being applied instantly. Proposal age reports the full 3002 ms, because an observation is timestamped when its frame was captured rather than after the vision call returns.
+
+That comparison comes from a local synthetic harness that is not committed. The live equivalent is committed and reproducible: `tests/test_continuous_runtime_live.py` is integration-marked and skips without the operator ROM.
+
+Live PyBoy, operator ROM, headless, measured:
+
+| Check | Result |
+|---|---|
+| Threads that called the emulator | `{memnara-runtime}` only, open and close included |
+| Overlapping emulator calls | 0 |
+| Three seconds of simulated decision latency | 180 frames advanced, 60.0 effective emulated fps, longest freeze 34 ms |
+| One action | 24 emulated frames, matching PyBoy's own `frame_count` |
+| Shutdown | every button released while the adapter was still open, then closed |
+
+Live PyBoy with a visible SDL2 window: every call on the owner thread, at least 30 frames in one second, and a changed published digest, so the window Memnara shows is the runtime it controls. A long operator play session with a real local model remains unmeasured.
 
 ## Performance
 

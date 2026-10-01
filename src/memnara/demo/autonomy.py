@@ -23,6 +23,13 @@ from memnara.emulators.gameplay import GameBoyActionExecutor
 from memnara.emulators.pyboy_adapter import VISIBLE_PYBOY_WINDOW, PyBoyAdapter
 from memnara.perception.vision.ollama import OllamaVisionProvider
 from memnara.rom_identity import inspect_rom
+from memnara.runtime.continuous import (
+    DEFAULT_TARGET_FPS,
+    RuntimeActionExecutor,
+    RuntimeFrameSource,
+    ThreadedEmulatorRuntime,
+)
+from memnara.runtime.exceptions import RuntimeShutdownError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +54,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print per-step perception reuse and timing on the developer CLI",
     )
     parser.add_argument(
+        "--step-runtime",
+        action="store_true",
+        help="Advance the emulator only around decisions instead of on its own clock",
+    )
+    parser.add_argument(
+        "--target-fps",
+        type=float,
+        default=DEFAULT_TARGET_FPS,
+        help="Continuous runtime cadence in emulated frames per second",
+    )
+    parser.add_argument(
         "--evidence",
         type=Path,
         default=None,
@@ -65,6 +83,36 @@ def controlled_window(*, show_window: bool, configured: str) -> str:
 def wire_controlled_runtime(adapter, vision):
     """Observer and executor share one emulator. No second process is created."""
     return VisualOnlyObserver(adapter, vision), GameBoyActionExecutor(adapter)
+
+
+def wire_continuous_runtime(
+    adapter,
+    vision,
+    gate: ControlGate,
+    *,
+    target_fps: float = DEFAULT_TARGET_FPS,
+    open_runtime=None,
+    close_runtime=None,
+):
+    """One owner thread advances the same emulator. The agent reads snapshots.
+
+    Opening and closing run on that thread too, so a window the emulator creates
+    is created, pumped, and destroyed on one thread.
+
+    `PAUSED` freezes the controlled runtime. The other owners keep it moving so a
+    person can play and so automatic sequences continue; AI input is still gated
+    by `ControlGate`, on the agent side and again on the owner thread.
+    """
+    runtime = ThreadedEmulatorRuntime(
+        adapter,
+        target_fps=target_fps,
+        should_advance=lambda: gate.owner is not ControlOwner.PAUSED,
+        can_apply_input=gate.allows_gameplay,
+        open_runtime=open_runtime,
+        close_runtime=close_runtime,
+    )
+    source = RuntimeFrameSource(runtime)
+    return runtime, VisualOnlyObserver(source, vision), RuntimeActionExecutor(runtime)
 
 
 def skip_intro(adapter: PyBoyAdapter) -> None:
@@ -102,6 +150,12 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "decision_readiness": step.decision_readiness,
         "progression_frames": step.progression_frames,
         "progression_chunks": step.progression_chunks,
+        "observation_id": step.observation_id,
+        "applied_observation_id": step.applied_observation_id,
+        "frames_since_observation": step.frames_since_observation,
+        "execution_frames": step.execution_frames,
+        # Running total for the whole run, not a count for this step.
+        "stale_proposals_dropped_total": step.stale_proposals_dropped,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {
@@ -112,6 +166,7 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
             "confirmation_ms": step.confirmation_ms,
             "model_wait_ms": step.model_wait_ms,
             "passive_runtime_ms": step.passive_runtime_ms,
+            "proposal_age_ms": step.proposal_age_ms,
             "total_ms": step.total_ms,
         },
     }
@@ -160,17 +215,38 @@ def main(argv: list[str] | None = None) -> int:
         "observer": "visual_only",
         "steps": [],
     }
-    try:
+    gate = ControlGate(ControlOwner(args.owner))
+    runtime = None
+
+    def open_controlled_runtime() -> None:
         adapter.start(rom)
         if args.skip_intro:
             skip_intro(adapter)
-        observer, executor = wire_controlled_runtime(adapter, vision)
+
+    try:
+        if args.step_runtime:
+            open_controlled_runtime()
+            observer, executor = wire_controlled_runtime(adapter, vision)
+            evidence["runtime_mode"] = "frame_stepped"
+        else:
+            runtime, observer, executor = wire_continuous_runtime(
+                adapter,
+                vision,
+                gate,
+                target_fps=args.target_fps,
+                open_runtime=open_controlled_runtime,
+                close_runtime=adapter.stop,
+            )
+            runtime.start()
+            evidence["runtime_mode"] = "continuous"
+            evidence["runtime_target_fps"] = args.target_fps
+            print(f"RUNTIME continuous owner thread at ~{args.target_fps:g} emulated fps")
         loop = AgentLoop(
             observer=observer,
             reasoner=reasoner,
             validator=ActionValidator(ActionRegistry(DEFAULT_GAMEPLAY_ACTIONS)),
             executor=executor,
-            ownership=ControlGate(ControlOwner(args.owner)),
+            ownership=gate,
             stuck=StuckDetector(StuckConfig()),
             max_steps=args.max_steps,
             dry_run=args.dry_run,
@@ -191,11 +267,32 @@ def main(argv: list[str] | None = None) -> int:
         print(f"HALT {result.halt_reason} stuck={result.stuck_state}")
         print(f"evidence {evidence_path}")
         return 0
+    except Exception as exc:
+        # A crashed run still owes an evidence file that says what went wrong.
+        evidence.setdefault("halt_reason", "error")
+        evidence["error"] = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
-        try:
-            adapter.stop()
-        except Exception:
-            pass
+        if runtime is not None:
+            # The owner thread closes the emulator itself. If it will not stop,
+            # say so loudly and leave the emulator alone rather than freeing it
+            # underneath a live thread.
+            try:
+                runtime.stop()
+            except RuntimeShutdownError as shutdown_exc:
+                print(f"RUNTIME shutdown failed: {shutdown_exc}", file=sys.stderr)
+            # Read after stop so release and close failures are recorded too.
+            evidence["runtime_frames_advanced"] = runtime.frames_advanced
+            evidence["runtime_longest_gap_ms"] = round(runtime.max_gap_ms, 1)
+            evidence["runtime_frame_wait_timeouts"] = runtime.frame_wait_timeouts
+            if runtime.error:
+                evidence["runtime_error"] = runtime.error
+                print(f"RUNTIME error {runtime.error}", file=sys.stderr)
+        else:
+            try:
+                adapter.stop()
+            except Exception:
+                pass
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
         evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
 
