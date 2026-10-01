@@ -16,11 +16,13 @@ from memnara.agent.loop import AgentLoop, format_step
 from memnara.agent.observe import VisualOnlyObserver
 from memnara.agent.ollama import OllamaReasoningProvider
 from memnara.agent.ownership import ControlGate, ControlOwner
+from memnara.agent.thinking import ThinkingProfile, resolve_thinking
 from memnara.agent.stuck import StuckConfig, StuckDetector
 from memnara.agent.validator import ActionValidator
 from memnara.config import load_config
 from memnara.emulators.gameplay import GameBoyActionExecutor
 from memnara.emulators.pyboy_adapter import VISIBLE_PYBOY_WINDOW, PyBoyAdapter
+from memnara.perception.vision.http import LocalJsonSession
 from memnara.perception.vision.ollama import OllamaVisionProvider
 from memnara.rom_identity import inspect_rom
 from memnara.runtime.continuous import (
@@ -65,6 +67,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Continuous runtime cadence in emulated frames per second",
     )
     parser.add_argument(
+        "--thinking",
+        default="balanced",
+        choices=[item.value for item in ThinkingProfile],
+        help="Decision latency/depth preset (fast, balanced, deliberate). Not an AI identity.",
+    )
+    parser.add_argument(
         "--evidence",
         type=Path,
         default=None,
@@ -80,9 +88,9 @@ def controlled_window(*, show_window: bool, configured: str) -> str:
     return configured
 
 
-def wire_controlled_runtime(adapter, vision):
+def wire_controlled_runtime(adapter, vision, *, reuse_policy: str = "exact"):
     """Observer and executor share one emulator. No second process is created."""
-    return VisualOnlyObserver(adapter, vision), GameBoyActionExecutor(adapter)
+    return VisualOnlyObserver(adapter, vision, reuse_policy=reuse_policy), GameBoyActionExecutor(adapter)
 
 
 def wire_continuous_runtime(
@@ -93,6 +101,7 @@ def wire_continuous_runtime(
     target_fps: float = DEFAULT_TARGET_FPS,
     open_runtime=None,
     close_runtime=None,
+    reuse_policy: str = "exact",
 ):
     """One owner thread advances the same emulator. The agent reads snapshots.
 
@@ -112,7 +121,7 @@ def wire_continuous_runtime(
         close_runtime=close_runtime,
     )
     source = RuntimeFrameSource(runtime)
-    return runtime, VisualOnlyObserver(source, vision), RuntimeActionExecutor(runtime)
+    return runtime, VisualOnlyObserver(source, vision, reuse_policy=reuse_policy), RuntimeActionExecutor(runtime)
 
 
 def skip_intro(adapter: PyBoyAdapter) -> None:
@@ -156,6 +165,7 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
         "execution_frames": step.execution_frames,
         # Running total for the whole run, not a count for this step.
         "stale_proposals_dropped_total": step.stale_proposals_dropped,
+        "thinking_profile": step.thinking_profile,
         "stuck_state": step.stuck_state,
         "error": step.error,
         "timings": {
@@ -167,7 +177,16 @@ def step_record(step: RecentStep, *, previous_mode: str | None = None) -> dict:
             "model_wait_ms": step.model_wait_ms,
             "passive_runtime_ms": step.passive_runtime_ms,
             "proposal_age_ms": step.proposal_age_ms,
+            "acquire_ms": step.acquire_ms,
+            "freshness_ms": step.freshness_ms,
+            "post_acquire_ms": step.post_acquire_ms,
+            "classification_ms": step.classification_ms,
+            "unaccounted_ms": step.unaccounted_ms,
             "total_ms": step.total_ms,
+        },
+        "prompt_sizes": {
+            "system_chars": step.prompt_system_chars,
+            "user_chars": step.prompt_user_chars,
         },
     }
 
@@ -183,18 +202,29 @@ def main(argv: list[str] | None = None) -> int:
     identity = inspect_rom(rom)
     session_id = str(uuid.uuid4())
     evidence_path = args.evidence or (cfg.autonomy_dir / "m6_live_autonomy.json")
+    thinking = resolve_thinking(args.thinking)
+    http_session = LocalJsonSession.from_endpoint(cfg.ollama_host, timeout_s=cfg.vision_timeout_s)
     vision = OllamaVisionProvider(
         endpoint=cfg.ollama_host,
         model=cfg.vision_model,
         scale=cfg.vision_scale,
         timeout_s=cfg.vision_timeout_s,
-        think=False,
+        think=thinking.think,
+        keep_alive=thinking.keep_alive,
+        num_predict=thinking.vision_num_predict,
+        description_limit=thinking.vision_description_limit,
+        compact_prompt=thinking.vision_compact_prompt,
+        session=http_session,
     )
     reasoner = OllamaReasoningProvider(
         endpoint=cfg.ollama_host,
         model=cfg.vision_model,
         timeout_s=cfg.reasoning_timeout_s,
-        think=False,
+        think=thinking.think,
+        keep_alive=thinking.keep_alive,
+        num_predict=thinking.reasoner_num_predict,
+        compact_prompt=thinking.reasoner_compact_prompt,
+        session=http_session,
     )
     window = controlled_window(show_window=args.show_window, configured=cfg.pyboy_window)
     if args.show_window:
@@ -213,6 +243,16 @@ def main(argv: list[str] | None = None) -> int:
         "skip_intro": args.skip_intro,
         "owner": args.owner,
         "observer": "visual_only",
+        "thinking_profile": thinking.name,
+        "thinking": {
+            "history_maxlen": thinking.history_maxlen,
+            "history_prompt_lines": thinking.history_prompt_lines,
+            "vision_num_predict": thinking.vision_num_predict,
+            "reasoner_num_predict": thinking.reasoner_num_predict,
+            "vision_description_limit": thinking.vision_description_limit,
+            "perception_reuse": thinking.perception_reuse,
+            "keep_alive": thinking.keep_alive,
+        },
         "steps": [],
     }
     gate = ControlGate(ControlOwner(args.owner))
@@ -226,7 +266,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.step_runtime:
             open_controlled_runtime()
-            observer, executor = wire_controlled_runtime(adapter, vision)
+            observer, executor = wire_controlled_runtime(
+                adapter, vision, reuse_policy=thinking.perception_reuse
+            )
             evidence["runtime_mode"] = "frame_stepped"
         else:
             runtime, observer, executor = wire_continuous_runtime(
@@ -236,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
                 target_fps=args.target_fps,
                 open_runtime=open_controlled_runtime,
                 close_runtime=adapter.stop,
+                reuse_policy=thinking.perception_reuse,
             )
             runtime.start()
             evidence["runtime_mode"] = "continuous"
@@ -251,7 +294,9 @@ def main(argv: list[str] | None = None) -> int:
             max_steps=args.max_steps,
             dry_run=args.dry_run,
             goal=args.goal,
+            thinking=thinking,
         )
+        print(f"THINKING {thinking.name}")
         result = loop.run()
         evidence["halt_reason"] = result.halt_reason
         evidence["stuck_state"] = result.stuck_state
@@ -293,6 +338,10 @@ def main(argv: list[str] | None = None) -> int:
                 adapter.stop()
             except Exception:
                 pass
+        try:
+            http_session.close()
+        except Exception:
+            pass
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
         evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
 

@@ -2,7 +2,7 @@
 
 ```text
 LAST APPROVED MILESTONE: 6
-CURRENT WORK: none
+CURRENT WORK: Post-M6 Patch #7 implemented, awaiting ChatGPT review
 MILESTONE 6: COMPLETE / APPROVED
 POST-M6 PATCH #1: COMPLETE / APPROVED
 POST-M6 PATCH #2: COMPLETE / APPROVED
@@ -10,6 +10,7 @@ POST-M6 PATCH #3: COMPLETE / APPROVED
 POST-M6 PATCH #4: COMPLETE / APPROVED
 POST-M6 PATCH #5: COMPLETE / APPROVED
 POST-M6 PATCH #6: COMPLETE / APPROVED
+POST-M6 PATCH #7: IMPLEMENTED / AWAITING CHATGPT REVIEW
 MILESTONE 7 AUTHORIZED: NO
 APPLICATION IMPLEMENTATION: M6 GENERIC BATTLE HANDLING
 ADR-001–ADR-008: ACCEPTED
@@ -23,10 +24,11 @@ POST-M6 PATCH #3 COMPLETE / APPROVED
 POST-M6 PATCH #4 COMPLETE / APPROVED
 POST-M6 PATCH #5 COMPLETE / APPROVED
 POST-M6 PATCH #6 COMPLETE / APPROVED
+POST-M6 PATCH #7 IMPLEMENTED / AWAITING CHATGPT REVIEW
 M7 AUTHORIZED NO
 ```
 
-Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is complete and approved. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
+Milestones 0–6 are complete and approved. Milestone 6 is generic battle handling on the bounded VISION + INPUT loop. Live battle proof was deferred and accepted. The first post-M6 validation patch is complete and approved. The second post-M6 patch, movement outcome and stuck recovery, is complete and approved. The third post-M6 patch, transition-state recovery, is complete and approved. The fourth post-M6 patch, interaction outcome and decision latency, is complete and approved. The fifth post-M6 patch, passive runtime progression, is complete and approved. The sixth post-M6 patch, continuous runtime with asynchronous decisions, is complete and approved. The seventh post-M6 patch, thinking profiles and decision-latency accounting, is implemented and awaiting review. None of these patches is a new milestone. ADR-008 is accepted architecture and does not authorize memory, RAG, UI, or M7 implementation.
 
 Public core: generic VISION + INPUT + PyBoy + M3 vision + M4 fusion + M5 bounded autonomy + M6 generic battle handling. Enhanced structured-state adapters are local/private.
 
@@ -216,6 +218,19 @@ Before executing, the loop checks ownership and then semantic freshness against 
 
 Synthetic measurement with three seconds of model latency on one decision: the longest runtime freeze fell from 3004 ms to 47 ms, emulated frames advanced during inference rose from 24 to 294, and effective cadence went from 5.3 to 60.3 emulated frames per second with identical vision and reasoning call counts. That harness is local and not committed. The live equivalent is committed as integration tests that skip without the operator ROM: against real headless PyBoy, three seconds of latency advanced 180 frames at 60.0 effective emulated frames per second with a 34 ms longest freeze, every emulator call came from the owner thread, one action emulated exactly the 24 settle frames PyBoy itself counted, and shutdown released every button while the adapter was still open. A visible SDL2 window showed the same ownership and published new frames. This patch does not make model decisions fast. It stops them from stopping the game.
 
+```text
+POST-M6 HANDS-ON FINDING
+
+Continuous runtime solved the choppy/frozen-emulator experience.
+
+The remaining UX complaint is AI decision latency: the pause now feels natural but longer than desired.
+
+Product direction:
+support configurable thinking depth so users can choose faster responses or more deliberate decisions without changing AI identity.
+```
+
+That finding does not replace the scorecards above. Operator steps such as 66/70/76 showed several seconds of wall time outside `perception_ms` + `reasoning_ms` + `execution_ms`. Accounting shows those seconds were not a hidden mystery bucket: they were the post-action acquire (a second vision call, stored historically as `confirmation_ms`) plus paced passive waits that the default CLI line omitted. Patch #7 times acquire, freshness, execution, post-acquire, and classification separately and reports `unaccounted_ms`. `--thinking fast|balanced|deliberate` selects a `ThinkingSettings` object (history window, vision/reasoner `num_predict`, description bound, compact prompts, exact vs similar perception reuse). Default remains `balanced`. FAST does not skip safety, ownership, stale-proposal checks, or Patch #4 outcomes. HTTP keep-alive reuses one loopback connection. `keep_alive=30m` is unchanged. This is not M7 memory.
+
 ## Open debts
 
 1. Coordinate/facing movement not experimentally proven (M2 private integration).
@@ -251,3 +266,8 @@ Non-blocking M6 debt. Do not treat these as authorization to broaden Milestone 6
 28. Abandoning a command does not clear the one-slot queue early, so the next submit can be refused until the owner thread finishes the one it holds.
 29. The demo records runtime evidence after `stop()` so a close failure is captured. That ordering is asserted at the runtime layer and not through `main`, which needs a ROM.
 30. The freshness check re-hashes the peeked frame even though the owner thread already published a digest for it. One extra hash per decision, no behavior change.
+31. `confirmation_ms` remains the post-action observation's `perception_ms`. The cheap `confirm_execution` probe is inside `freshness_ms`. The name is historical and was not renamed, to keep evidence keys stable.
+32. FAST similar-perception reuse can keep a previous visual reading across idle animation. A material interaction change that stays under the pixel threshold would be missed until the next exact change. Conservative and FAST-only.
+33. `num_predict` bounds can still truncate JSON on a verbose model. That fails closed (malformed), which costs a retry/failure rather than a guessed action.
+34. Operator live-game FAST timing is unmeasured. Synthetic accounting and provider-payload tests are verified; warm qwen live comparison is not in this patch.
+35. Repeated `PRESS_B → NO_EFFECT` in the latest live battle menu is not explained by missing history: FAST still receives those outcome lines. The model can still ignore them. Not treated as Patch #7 scope.

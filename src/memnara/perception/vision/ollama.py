@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
+import copy
 import socket
 import time
 import urllib.error
-import urllib.request
 from dataclasses import replace
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from memnara.emulators.base import Framebuffer
 from memnara.perception.vision.base import VisionProvider
@@ -21,10 +20,16 @@ from memnara.perception.vision.exceptions import (
     VisionParseError,
     VisionTimeoutError,
 )
+from memnara.perception.vision.http import LocalJsonSession
 from memnara.perception.vision.images import DEFAULT_SCALE, encode_framebuffer_png
 from memnara.perception.vision.models import VisualObservation
 from memnara.perception.vision.parse import parse_observation
-from memnara.perception.vision.prompts import OBSERVATION_FORMAT, SYSTEM_PROMPT, USER_PROMPT
+from memnara.perception.vision.prompts import (
+    COMPACT_USER_PROMPT,
+    OBSERVATION_FORMAT,
+    SYSTEM_PROMPT,
+    USER_PROMPT,
+)
 
 import base64
 
@@ -60,6 +65,10 @@ class OllamaVisionProvider(VisionProvider):
         timeout_s: float = DEFAULT_TIMEOUT_S,
         think: bool = False,
         keep_alive: str = DEFAULT_KEEP_ALIVE,
+        num_predict: int | None = None,
+        description_limit: int | None = None,
+        compact_prompt: bool = False,
+        session: LocalJsonSession | None = None,
         http_get=None,
         http_post=None,
     ) -> None:
@@ -69,29 +78,43 @@ class OllamaVisionProvider(VisionProvider):
         self.timeout_s = timeout_s
         self.think = think
         self.keep_alive = keep_alive
-        self._http_get = http_get or self._get_json
-        self._http_post = http_post or self._post_json
+        self.num_predict = num_predict
+        self.description_limit = description_limit
+        self.compact_prompt = compact_prompt
+        self._session = session
+        self._owns_session = session is None and http_get is None and http_post is None
+        self._http_get = http_get or (session.get_json if session is not None else self._get_json)
+        self._http_post = http_post or (session.post_json if session is not None else self._post_json)
         self._model_checked = False
+        self.last_prompt_chars = 0
+        self.last_eval_count: int | None = None
 
     def observe(self, frame: Framebuffer) -> VisualObservation:
         self.ensure_model()
         png, width, height = encode_framebuffer_png(frame, scale=self.scale)
         image_b64 = base64.b64encode(png).decode("ascii")
+        user_prompt = COMPACT_USER_PROMPT if self.compact_prompt else USER_PROMPT
+        observation_format = copy.deepcopy(OBSERVATION_FORMAT)
+        if self.description_limit is not None:
+            observation_format["properties"]["description"]["maxLength"] = int(self.description_limit)
         payload: dict[str, Any] = {
             "model": self.model,
             "stream": False,
             "think": self.think,
             "keep_alive": self.keep_alive,
-            "format": OBSERVATION_FORMAT,
+            "format": observation_format,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": USER_PROMPT,
+                    "content": user_prompt,
                     "images": [image_b64],
                 },
             ],
         }
+        if self.num_predict is not None:
+            payload["options"] = {"num_predict": int(self.num_predict)}
+        self.last_prompt_chars = len(SYSTEM_PROMPT) + len(user_prompt)
         started = time.perf_counter()
         try:
             response = self._http_post("/api/chat", payload)
@@ -126,11 +149,21 @@ class OllamaVisionProvider(VisionProvider):
             latency_ms=latency_ms,
             eval_count=eval_int,
         )
+        self.last_eval_count = eval_int
+        if self.description_limit is not None:
+            clipped = _clip_text(observation.description, self.description_limit)
+            if clipped != observation.description:
+                observation = replace(observation, description=clipped)
         if used_thinking:
             extra = "json_in_message.thinking (content empty; think=false still used thinking field)"
             notes = f"{observation.notes}; {extra}" if observation.notes else extra
             return replace(observation, notes=notes)
         return observation
+
+    def close(self) -> None:
+        if self._owns_session and self._session is not None:
+            self._session.close()
+            self._session = None
 
     def ensure_model(self) -> None:
         if self._model_checked:
@@ -138,33 +171,24 @@ class OllamaVisionProvider(VisionProvider):
         require_vision_model(self.model, get_json=self._http_get, post_json=self._http_post)
         self._model_checked = True
 
+    def _lazy_session(self) -> LocalJsonSession:
+        if self._session is None:
+            self._session = LocalJsonSession.from_endpoint(self.endpoint, timeout_s=self.timeout_s)
+            self._owns_session = True
+        return self._session
+
     def _get_json(self, path: str) -> dict[str, Any]:
-        return self._request("GET", path, None)
+        return self._lazy_session().get_json(path)
 
     def _post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        return self._request("POST", path, body)
+        return self._lazy_session().post_json(path, body)
 
-    def _request(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
-        url = urljoin(self.endpoint + "/", path.lstrip("/"))
-        data = None if body is None else json.dumps(body).encode("utf-8")
-        headers = {"Accept": "application/json"}
-        if data is not None:
-            headers["Content-Type"] = "application/json"
-        request = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as handle:
-                raw = handle.read().decode("utf-8")
-        except TimeoutError as exc:
-            raise TimeoutError(str(exc)) from exc
-        except urllib.error.URLError as exc:
-            reason = exc.reason
-            if isinstance(reason, socket.timeout) or "timed out" in str(exc).lower():
-                raise TimeoutError(str(exc)) from exc
-            raise
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise VisionParseError(f"Ollama returned non-JSON: {exc}") from exc
-        if not isinstance(parsed, dict):
-            raise VisionParseError("Ollama JSON must be an object")
-        return parsed
+
+def _clip_text(text: str, limit: int) -> str:
+    stripped = (text or "").strip()
+    if limit < 1 or len(stripped) <= limit:
+        return stripped
+    clipped = stripped[:limit].rstrip()
+    if " " in clipped[ max(0, limit // 2) :]:
+        clipped = clipped.rsplit(" ", 1)[0]
+    return clipped or stripped[:limit]

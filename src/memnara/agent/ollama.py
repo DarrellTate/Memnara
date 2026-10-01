@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import socket
 import urllib.error
-import urllib.request
 from typing import Any
-from urllib.parse import urljoin
 
 from memnara.agent.actions import ActionProposal
 from memnara.agent.exceptions import ReasoningError, ReasoningTimeoutError
-from memnara.agent.reasoning import PROPOSAL_FORMAT, SYSTEM_PROMPT, ReasoningProvider, build_user_prompt
+from memnara.agent.reasoning import (
+    PROPOSAL_FORMAT,
+    ReasoningProvider,
+    build_user_prompt,
+    system_prompt_for,
+)
+from memnara.agent.thinking import prompt_size_report
 from memnara.agent.validator import ActionValidator
 from memnara.perception.context import PerceptionContext
 from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUnavailableError
+from memnara.perception.vision.http import LocalJsonSession
 from memnara.perception.vision.ollama import (
     DEFAULT_ENDPOINT,
     DEFAULT_KEEP_ALIVE,
@@ -32,6 +36,9 @@ class OllamaReasoningProvider(ReasoningProvider):
         timeout_s: float = 120.0,
         think: bool = False,
         keep_alive: str = DEFAULT_KEEP_ALIVE,
+        num_predict: int | None = None,
+        compact_prompt: bool = False,
+        session: LocalJsonSession | None = None,
         http_post=None,
     ) -> None:
         self.endpoint = assert_local_endpoint(endpoint)
@@ -39,7 +46,15 @@ class OllamaReasoningProvider(ReasoningProvider):
         self.timeout_s = timeout_s
         self.think = think
         self.keep_alive = keep_alive
-        self._http_post = http_post or self._post_json
+        self.num_predict = num_predict
+        self.compact_prompt = compact_prompt
+        self.system_prompt = system_prompt_for(compact=compact_prompt)
+        self._session = session
+        self._owns_session = session is None and http_post is None
+        self._http_post = http_post or (session.post_json if session is not None else self._post_json)
+        self.last_prompt_chars = 0
+        self.last_prompt_sizes: dict[str, int] = {}
+        self.last_eval_count: int | None = None
 
     def propose(
         self,
@@ -68,10 +83,14 @@ class OllamaReasoningProvider(ReasoningProvider):
             "keep_alive": self.keep_alive,
             "format": PROPOSAL_FORMAT,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user},
             ],
         }
+        if self.num_predict is not None:
+            payload["options"] = {"num_predict": int(self.num_predict)}
+        self.last_prompt_sizes = prompt_size_report(self.system_prompt, user)
+        self.last_prompt_chars = self.last_prompt_sizes["total_chars"]
         try:
             response = self._http_post("/api/chat", payload)
         except TimeoutError as exc:
@@ -93,6 +112,8 @@ class OllamaReasoningProvider(ReasoningProvider):
             used_thinking = True
         if not text:
             raise ReasoningError("Ollama reasoning response missing message.content")
+        eval_count = response.get("eval_count") if isinstance(response, dict) else None
+        self.last_eval_count = int(eval_count) if isinstance(eval_count, int) else None
         proposal = validator.parse_and_validate(text)
         if used_thinking:
             return ActionProposal(
@@ -104,29 +125,16 @@ class OllamaReasoningProvider(ReasoningProvider):
             )
         return proposal
 
+    def close(self) -> None:
+        if self._owns_session and self._session is not None:
+            self._session.close()
+            self._session = None
+
+    def _lazy_session(self) -> LocalJsonSession:
+        if self._session is None:
+            self._session = LocalJsonSession.from_endpoint(self.endpoint, timeout_s=self.timeout_s)
+            self._owns_session = True
+        return self._session
+
     def _post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        url = urljoin(self.endpoint + "/", path.lstrip("/"))
-        data = json.dumps(body).encode("utf-8")
-        request = urllib.request.Request(
-            url,
-            data=data,
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout_s) as handle:
-                raw = handle.read().decode("utf-8")
-        except TimeoutError as exc:
-            raise TimeoutError(str(exc)) from exc
-        except urllib.error.URLError as exc:
-            reason = exc.reason
-            if isinstance(reason, socket.timeout) or "timed out" in str(exc).lower():
-                raise TimeoutError(str(exc)) from exc
-            raise
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ReasoningError(f"Ollama returned non-JSON: {exc}") from exc
-        if not isinstance(parsed, dict):
-            raise ReasoningError("Ollama JSON must be an object")
-        return parsed
+        return self._lazy_session().post_json(path, body)

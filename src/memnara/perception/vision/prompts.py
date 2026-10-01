@@ -26,6 +26,12 @@ USER_PROMPT = (
     "If text is unreadable, leave visible_text empty rather than inventing words."
 )
 
+COMPACT_USER_PROMPT = (
+    "Observe this screenshot. JSON only. description: one short actionable sentence, "
+    "not a tile catalog. visible_text only if readable, else empty. "
+    "Leave entities empty unless a distinct named object is visible. No actions."
+)
+
 OBSERVATION_FORMAT = {
     "type": "object",
     "additionalProperties": False,

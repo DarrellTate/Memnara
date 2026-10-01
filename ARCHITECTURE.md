@@ -20,6 +20,7 @@ M4 source-aware perception fusion
 M5 bounded autonomous control loop
 M6 generic battle interaction mode
 post-M6 continuous runtime (owner thread + snapshot proposals)
+post-M6 thinking profiles (FAST / BALANCED / DELIBERATE)
 ```
 
 ```text
@@ -35,7 +36,7 @@ cross-runtime profile continuity
 
 SNES, PlayStation 1, DuckStation, GBA backends, and native Windows gameplay **do not exist** in application code. Do not document them as shipped features.
 
-Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#6. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#6 are **COMPLETE / APPROVED**. None is a new milestone. M7 is not authorized.
+Application implementation: M1 harness, M2 optional local structured-state reader, M3 vision, M4 perception fusion, M5 bounded autonomy, M6 generic battle handling, and post-M6 patches #1–#7. M0–M6 are **COMPLETE / APPROVED**. Patches #1–#6 are **COMPLETE / APPROVED**. Patch #7 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. None is a new milestone. M7 is not authorized.
 
 ## Runtime families (design)
 
@@ -237,6 +238,10 @@ stateDiagram-v2
 Stored config (user-editable later), not hard-coded “Misty” unless the user chooses. Fields: name, style, trait sliders (curiosity, humor, competitiveness, patience, risk, empathy, verbosity). Prompt always: *I am the AI; I play the game; I control a character; I am not the character.*
 
 Profiles are independent of runtime, game, emulator, model, and voice. Example: the same profile may play a Game Boy title, later a native PC title, later another emulator title, retaining identity and appropriately scoped memories. Changing runtime or model does not mint a new identity.
+
+## Thinking depth
+
+Thinking depth is an execution/configuration concern, not AI identity. `ThinkingSettings` presets (`fast`, `balanced`, `deliberate`) bound history windows, vision/reasoner generation, description length, and perception-reuse strictness. The future M10 UI can expose a Thinking selector next to Model. Switching Balanced → Fast does not create a different AI, change the model, or alter voice/runtime/controls. Default for this patch is `balanced`. Providers consume numeric/text budgets and should not branch on UI names.
 
 ## Commentary / experience (future)
 

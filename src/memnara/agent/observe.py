@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from memnara.agent.movement import MovementOutcome, SceneSignature, frame_signature, read_navigation_token
+from memnara.agent.readiness import frames_meaningfully_changed
+from memnara.agent.thinking import REUSE_SIMILAR
 from memnara.agent.transition import SceneStability, frame_stability
 from memnara.perception.context import PerceptionContext
 from memnara.perception.fusion import compact_summary, fuse
@@ -182,11 +184,13 @@ def _published_identity(source) -> _PublishedIdentity:
 class VisualOnlyObserver(PerceptionObserver):
     """Generic VISION + INPUT observer. No structured game-state adapter."""
 
-    def __init__(self, emulator, vision) -> None:
+    def __init__(self, emulator, vision, *, reuse_policy: str = "exact") -> None:
         self._emulator = emulator
         self._vision = vision
+        self._reuse_policy = reuse_policy
         self._reuse_digest: str | None = None
         self._reuse_visual = None
+        self._reuse_frame = None
         self._observation_seq = 0
 
     def observe(self) -> ObservedState:
@@ -217,13 +221,14 @@ class VisualOnlyObserver(PerceptionObserver):
         """Drop a cached reading after a fade. The next stable frame is read again."""
         self._reuse_visual = None
         self._reuse_digest = None
+        self._reuse_frame = None
 
     def observe_frame(self, frame) -> ObservedState:
-        """Run one vision call, or reuse the last stable reading of these exact pixels.
+        """Run one vision call, or reuse a still-equivalent stable reading.
 
-        Reuse is exact-digest only, and only while both readings are STABLE.
-        A different framebuffer, including a fade or a menu change, calls the
-        vision model again.
+        Exact reuse matches the framebuffer digest. Similar reuse, when enabled,
+        also accepts idle animation below the pixel-change threshold. A fade or
+        a material scene change calls the vision model again.
         """
         started = time.perf_counter()
         # Identity belongs to the frame, so it is read before the vision call. A
@@ -239,11 +244,18 @@ class VisualOnlyObserver(PerceptionObserver):
         observed_at = published.captured_at or time.time()
         reused = False
         vision_started = time.perf_counter()
+        similar = (
+            self._reuse_policy == REUSE_SIMILAR
+            and stability is SceneStability.STABLE
+            and self._reuse_visual is not None
+            and self._reuse_frame is not None
+            and not frames_meaningfully_changed(self._reuse_frame, frame)
+        )
         if (
             stability is SceneStability.STABLE
             and self._reuse_visual is not None
             and digest
-            and digest == self._reuse_digest
+            and (digest == self._reuse_digest or similar)
         ):
             visual = self._reuse_visual
             reused = True
@@ -252,10 +264,15 @@ class VisualOnlyObserver(PerceptionObserver):
             if stability is SceneStability.STABLE and digest:
                 self._reuse_visual = visual
                 self._reuse_digest = digest
+                self._reuse_frame = frame
             else:
                 self._reuse_visual = None
                 self._reuse_digest = None
+                self._reuse_frame = None
         vision_ms = 0.0 if reused else (time.perf_counter() - vision_started) * 1000
+        if reused:
+            self._reuse_frame = frame
+            self._reuse_digest = digest
         context = fuse(visual=visual)
         fingerprint = fingerprint_context(context, None)
         elapsed = (time.perf_counter() - started) * 1000

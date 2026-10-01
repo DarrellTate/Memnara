@@ -252,6 +252,23 @@ Live PyBoy, operator ROM, headless, measured:
 
 Live PyBoy with a visible SDL2 window: every call on the owner thread, at least 30 frames in one second, and a changed published digest, so the window Memnara shows is the runtime it controls. A long operator play session with a real local model remains unmeasured.
 
+## Post-M6 thinking profiles
+
+This is not a new milestone. M6 stays **COMPLETE / APPROVED**. Post-M6 Patch #7 is **IMPLEMENTED / AWAITING CHATGPT REVIEW**. M7 stays unauthorized.
+
+```text
+POST-M6 HANDS-ON FINDING
+
+Continuous runtime solved the choppy/frozen-emulator experience.
+
+The remaining UX complaint is AI decision latency: the pause now feels natural but longer than desired.
+
+Product direction:
+support configurable thinking depth so users can choose faster responses or more deliberate decisions without changing AI identity.
+```
+
+`--thinking fast|balanced|deliberate` maps onto one `ThinkingSettings` object. Default is balanced. FAST shortens the reasoner system prompt, bounds `num_predict`, asks for a short visual description, and may reuse perception across idle animation. All profiles keep the same action JSON schema, ownership, stale-proposal checks, and Patch #4/`NO_EFFECT` history. `--timing-details` now prints acquire, freshness, post-acquire, classification, and unaccounted milliseconds so a step's wall clock can be reconstructed. `confirmation_ms` remains the post-action observation time for evidence compatibility.
+
 ## Performance
 
 No live `perception_ms` / `reasoning_ms` / `execution_ms` sample was captured for a battle. The M5 baseline remains: several seconds per action after warmup, with a slower first visual call. M6 does not add a second vision call per step. Post-M6 Patch #3 does not add a vision call per pumped transition frame.

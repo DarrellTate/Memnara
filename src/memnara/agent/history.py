@@ -36,6 +36,9 @@ class RecentStep:
     interaction_outcome: str = "NOT_APPLICABLE"
     perception_reused: bool = False
     confirmation_ms: float | None = None
+    # confirmation_ms is the post-action observation's perception_ms, not the
+    # cheap confirm_execution probe. post_acquire_ms is the full after-action
+    # acquire wall time, including passive waits.
     vision_ms: float | None = None
     decision_readiness: str = "UNKNOWN"
     progression_frames: int = 0
@@ -49,6 +52,14 @@ class RecentStep:
     stale_proposals_dropped: int = 0
     execution_frames: int = 0
     applied_observation_id: str = ""
+    thinking_profile: str = "balanced"
+    acquire_ms: float | None = None
+    freshness_ms: float | None = None
+    post_acquire_ms: float | None = None
+    classification_ms: float | None = None
+    unaccounted_ms: float | None = None
+    prompt_system_chars: int | None = None
+    prompt_user_chars: int | None = None
 
 
 class StepHistory:

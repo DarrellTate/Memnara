@@ -30,6 +30,7 @@ from memnara.agent.readiness import (
 )
 from memnara.agent.reasoning import ReasoningProvider
 from memnara.agent.stuck import StuckDetector, StuckState
+from memnara.agent.thinking import DEFAULT_THINKING_PROFILE, ThinkingSettings, resolve_thinking
 from memnara.agent.transition import (
     DEFAULT_TRANSITION_CHUNK_FRAMES,
     DEFAULT_TRANSITION_GRACE_FRAMES,
@@ -42,6 +43,13 @@ from memnara.perception.vision.exceptions import ModelUnavailableError, OllamaUn
 
 
 _TRANSIENT_STALE = "the scene started transitioning"
+
+
+def _prompt_size(reasoner, key: str) -> int | None:
+    sizes = getattr(reasoner, "last_prompt_sizes", None)
+    if isinstance(sizes, dict) and key in sizes:
+        return int(sizes[key])
+    return None
 
 
 @dataclass(frozen=True)
@@ -82,6 +90,7 @@ class AgentLoop:
         max_consecutive_failures: int = 5,
         dry_run: bool = False,
         goal: str = "Explore and make progress through the game.",
+        thinking: ThinkingSettings | None = None,
         transition_grace_frames: int = DEFAULT_TRANSITION_GRACE_FRAMES,
         transition_chunk_frames: int = DEFAULT_TRANSITION_CHUNK_FRAMES,
         passive_budget_frames: int = DEFAULT_PASSIVE_BUDGET_FRAMES,
@@ -108,7 +117,8 @@ class AgentLoop:
         self.executor = executor
         self.ownership = ownership
         self.stuck = stuck or StuckDetector()
-        self.history = history or StepHistory()
+        self.thinking = thinking or resolve_thinking(DEFAULT_THINKING_PROFILE)
+        self.history = history or StepHistory(maxlen=self.thinking.history_maxlen)
         self.max_steps = max_steps
         self.max_consecutive_failures = max_consecutive_failures
         self.dry_run = dry_run
@@ -126,8 +136,14 @@ class AgentLoop:
         stale_dropped = 0
         for index in range(1, self.max_steps + 1):
             started = time.perf_counter()
+            acquire_ms = 0.0
+            freshness_ms = 0.0
+            post_acquire_ms = 0.0
+            classification_ms = 0.0
             try:
+                acquire_started = time.perf_counter()
                 before_acq = self._acquire()
+                acquire_ms = (time.perf_counter() - acquire_started) * 1000
             except Exception as exc:
                 raise PerceptionFailedError(f"observe failed: {exc}") from exc
             before = before_acq.state
@@ -152,7 +168,7 @@ class AgentLoop:
             frames_since_observation = 0
 
             if not before_acq.suppressed:
-                history_lines = self.history.action_lines()
+                history_lines = self.history.action_lines(limit=self.thinking.history_prompt_lines)
                 if before.scene_stability == SceneStability.TRANSIENT.value:
                     history_lines = (TRANSITION_GUIDANCE,) + history_lines
                 elif before_acq.progression_frames > 0:
@@ -201,9 +217,11 @@ class AgentLoop:
                     frames_since_observation = max(
                         0, self._runtime_frame() - before.runtime_frame
                     )
+                    fresh_started = time.perf_counter()
                     if not self.ownership.allows_gameplay():
                         # Ownership moved while the model was thinking, so this
                         # proposal is as stale as a changed scene.
+                        freshness_ms = (time.perf_counter() - fresh_started) * 1000
                         stale_dropped += 1
                         error = f"OwnershipDeniedError: owner={self.ownership.owner.value}"
                     elif (
@@ -212,11 +230,13 @@ class AgentLoop:
                     ):
                         # The grace budget is already spent and the scene is still
                         # unsettled. WAIT may run. Other gameplay input may not.
+                        freshness_ms = (time.perf_counter() - fresh_started) * 1000
                         error = "TransitionInputError: gameplay input refused while the scene is transient"
                     else:
                         confirmed = self._confirm_execution(before)
                         confirmed_mode = derive_battle_view(confirmed.context).mode
                         stale = self._staleness(signature, before_acq, confirmed_mode.value)
+                        freshness_ms = (time.perf_counter() - fresh_started) * 1000
                         if confirmed_mode.value != signature.interaction_mode:
                             stale_dropped += 1
                             error = (
@@ -263,14 +283,17 @@ class AgentLoop:
                             else:
                                 consecutive_failures = 0
                                 try:
+                                    post_started = time.perf_counter()
                                     after_acq = self._acquire()
                                     after = after_acq.state
+                                    post_acquire_ms = (time.perf_counter() - post_started) * 1000
                                 except Exception as exc:
                                     error = f"PerceptionFailedError: {exc}"
                                     consecutive_failures += 1
                                     after = before
                                     after_acq = None
 
+            classify_started = time.perf_counter()
             movement = self._movement(proposal, executed, before, after, after_acq)
             unconfirmed = executed and after is before
             # A fade that has already settled is classified from the stable frame.
@@ -316,7 +339,17 @@ class AgentLoop:
             )
             grace_remaining = after_acq.grace_remaining if after_acq else before_acq.grace_remaining
             transition_state = SceneStability.TRANSIENT.value if saw else SceneStability.STABLE.value
+            classification_ms = (time.perf_counter() - classify_started) * 1000
             total_ms = (time.perf_counter() - started) * 1000
+            accounted = (
+                acquire_ms
+                + (reasoning_ms or 0.0)
+                + freshness_ms
+                + (execution_ms or 0.0)
+                + post_acquire_ms
+                + classification_ms
+            )
+            unaccounted_ms = max(0.0, total_ms - accounted)
             model_wait_ms = before.vision_ms + (reasoning_ms or 0.0)
             if after_acq is not None:
                 model_wait_ms += after.vision_ms
@@ -361,6 +394,14 @@ class AgentLoop:
                     stale_proposals_dropped=stale_dropped,
                     execution_frames=execution_frames,
                     applied_observation_id=applied_observation_id,
+                    thinking_profile=self.thinking.name,
+                    acquire_ms=acquire_ms,
+                    freshness_ms=freshness_ms,
+                    post_acquire_ms=post_acquire_ms,
+                    classification_ms=classification_ms,
+                    unaccounted_ms=unaccounted_ms,
+                    prompt_system_chars=_prompt_size(self.reasoner, "system_chars"),
+                    prompt_user_chars=_prompt_size(self.reasoner, "user_chars"),
                 )
             )
             if stuck_state is StuckState.INTERVENTION_REQUIRED:
@@ -650,6 +691,9 @@ def format_step(step: RecentStep, *, previous_mode: str | None = None, timing_de
                 f"reasoning_ms={step.reasoning_ms} execution_ms={step.execution_ms} "
                 f"confirmation_ms={step.confirmation_ms} total_ms={step.total_ms} "
                 f"model_wait_ms={step.model_wait_ms} passive_runtime_ms={step.passive_runtime_ms} "
+                f"acquire_ms={step.acquire_ms} freshness_ms={step.freshness_ms} "
+                f"post_acquire_ms={step.post_acquire_ms} classification_ms={step.classification_ms} "
+                f"unaccounted_ms={step.unaccounted_ms} thinking={step.thinking_profile} "
                 f"progression_frames={step.progression_frames} "
                 f"progression_chunks={step.progression_chunks}{throughput}\n"
                 f"RUNTIME observation={step.observation_id or 'none'} "
